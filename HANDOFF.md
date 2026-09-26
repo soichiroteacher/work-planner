@@ -107,5 +107,5 @@
 - アプリのファイルを変えたら、`.git` を除いてフォルダ全体を `C:\Users\idolo\Documents\projects\appcopy\work-planner\` にコピーする。GitHub のリモートができたら、あわせて commit・push する(force push はしない)。
 - 実データ(実際の先生の名前が入ったデータファイル・バックアップ)はこのフォルダに置かない。動作確認は架空の名前のサンプルで行う。
 - 機能を変えたら README.md・CHANGELOG.md・このファイルを同時に更新する。
-- 動作確認は Browser pane で行う。`projects/.claude/launch.json` に開発用サーバーの設定があるので、`work-planner` 用の設定を足して使う(`serve-dir.ps1` に `-Root apps/work-planner` を渡す)。この PC には Node.js・Python がない。
+- 動作確認は Browser pane で行う。このフォルダの `.claude/launch.json` に開発用サーバーの設定(名前 `work-planner`、http://localhost:8104)がある。サーバー本体は `projects/.claude/serve-dir.ps1`(アプリのフォルダの外にあり、配布物には入らない)。この PC には Node.js・Python がない。
 - 参考にできる既存アプリ: 共有ファイルの編集ロックと自動保存は `../school-events`(行事予定)と `../account-manager`(アカウント管理)、表を Excel のように操作する部分は `../school-events` の「実績」タブ。

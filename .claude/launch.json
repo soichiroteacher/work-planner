@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "work-planner",
+      "runtimeExecutable": "powershell.exe",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "../../.claude/serve-dir.ps1", "-Root", "apps/work-planner", "-Port", "8104"],
+      "port": 8104
+    }
+  ]
+}
