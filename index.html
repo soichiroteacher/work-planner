@@ -148,7 +148,72 @@ table.list td.nowrap{ white-space:nowrap; }
 .modal .foot .spacer{ flex:1; }
 .modal .err{ color:var(--warn); font-size:14px; margin-top:6px; }
 .modal .readonly-note{ background:#fff3c4; padding:6px 10px; border-radius:5px; font-size:14px; margin-bottom:8px; }
+.modal .choices.col{ flex-direction:column; flex-wrap:nowrap; gap:4px; max-height:190px; overflow:auto; border:1px solid var(--line); border-radius:5px; padding:6px 10px; }
+
+/* ===== 仕事量(ガントチャートの下) ===== */
+.gwrap.with-load{ max-height:calc(58vh - 60px); min-height:200px; }
+#loadPanel{ margin-top:14px; }
+#loadPanel h2{ font-size:16px; margin:0 0 4px; }
+#loadPanel .hint{ margin:0 0 6px; }
+.load-wrap{ overflow:auto; }
+table.load{ border-collapse:collapse; font-size:14px; }
+table.load th, table.load td{ border:1px solid var(--line); padding:4px 6px; text-align:center; min-width:48px; }
+table.load th{ background:#eef2f6; font-weight:bold; }
+table.load td.nm{ text-align:left; white-space:nowrap; min-width:100px; }
+table.load tbody tr.mem{ cursor:pointer; }
+table.load tbody tr.mem:hover td.nm{ background:#f0f5fb; }
+table.load tr.sel td.nm{ background:#fff3c4 !important; font-weight:bold; }
+table.load .tot{ border-left:2px solid var(--line-strong); font-weight:bold; }
+table.load tr.sum td{ border-top:2px solid var(--line-strong); font-weight:bold; background:#f7f7f7; }
+
+/* ===== 印刷(印刷用の内容は #printArea に組み立てる。画面には出さない) ===== */
+#printArea{ display:none; }
+@media print{
+  body.printing > *:not(#printArea){ display:none !important; }
+  body.printing #printArea{ display:block; }
+  *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }  /* 横棒の塗りや色の濃さを印刷する */
+}
+.p-root{ color:#000; font-size:var(--p-font); }
+.p-title{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:3px; }
+.p-title h1{ font-size:var(--p-h1); margin:0; }
+.p-title .sub{ font-size:var(--p-small); }
+.p-legend{ display:flex; gap:14px; align-items:center; font-size:var(--p-small); margin-bottom:4px; flex-wrap:wrap; }
+.p-legend .bar{ position:static; display:inline-block; width:30px; vertical-align:middle; }
+table.p-gantt{ border-collapse:collapse; table-layout:fixed; border:1px solid #555; }
+table.p-gantt td, table.p-gantt th{ padding:0; border-bottom:1px solid #ccc; }
+table.p-gantt thead th{ border-bottom:1.5px solid #555; font-weight:bold; }
+table.p-gantt tr{ break-inside:avoid; }
+td.p-label, th.p-label{ border-right:1px solid #555; font-size:var(--p-font); }
+.p-lab{ display:flex; align-items:center; gap:4px; height:var(--p-row); padding:0 4px; white-space:nowrap; overflow:hidden; }
+.p-lab .nm{ overflow:hidden; text-overflow:ellipsis; }
+.p-lab .p-st{ margin-left:auto; flex-shrink:0; font-size:var(--p-small); border:1px solid #777; border-radius:3px; padding:0 3px; font-weight:normal; }
+.p-lab .p-st.od{ background:var(--warn); color:#fff; border-color:var(--warn); }
+tr.p-task .p-lab{ padding-left:1.3em; }
+tr.p-proj td{ background:#efefef; font-weight:bold; }
+.p-time{ position:relative; height:var(--p-row); overflow:hidden; }
+.p-head{ height:auto; }
+.p-hrow{ position:relative; height:calc(var(--p-font) + 8px); }
+.p-hrow + .p-hrow{ border-top:1px solid #ccc; }
+.p-hc{ position:absolute; top:0; height:100%; border-left:1px solid #999; text-align:center; font-size:var(--p-font); line-height:calc(var(--p-font) + 8px); overflow:hidden; white-space:nowrap; }
+.p-hrow.wk .p-hc{ font-size:var(--p-small); font-weight:normal; }
+.p-vl{ position:absolute; top:0; bottom:0; border-left:1px solid #e0e0e0; }
+.p-vl.m{ border-left-color:#999; }
+.p-today{ position:absolute; top:0; bottom:0; border-left:1.5px dashed var(--warn); }
+.p-root .bar{ top:calc((var(--p-row) - var(--p-bar)) / 2); height:var(--p-bar); border-width:1.5px; min-width:4px; cursor:default; }
+.p-root .bar.overdue{ border-width:2.5px; }
+.p-root .pbar{ top:calc(var(--p-row) / 2 - 4px); height:6px; cursor:default; }
+.p-root .pbar::before, .p-root .pbar::after{ height:11px; }
+.p-note{ position:absolute; top:0; line-height:var(--p-row); font-size:var(--p-small); white-space:nowrap; font-weight:normal; }
+.p-note.od{ color:var(--warn); font-weight:bold; }
+.p-note.in{ z-index:3; top:calc((var(--p-row) - var(--p-small) - 4px) / 2); line-height:calc(var(--p-small) + 4px); background:#fff; padding:0 4px; border-radius:3px; }
+#printOverlay select{ width:auto; }
+.p-load{ margin-top:10px; break-inside:avoid; }
+.p-load h2{ font-size:calc(var(--p-font) + 2px); margin:0 0 3px; }
+.p-load table.load{ font-size:var(--p-font); }
+.p-load table.load th, .p-load table.load td{ padding:1px 4px; min-width:0; }
+.p-load .hint{ font-size:var(--p-small); color:#333; margin-top:2px; }
 </style>
+<style id="pageStyle">@page{ size:A3 landscape; margin:8mm; }</style>
 </head>
 <body>
 
@@ -194,6 +259,8 @@ table.list td.nowrap{ white-space:nowrap; }
       <label><input type="checkbox" id="gHideDone"> 完了を隠す</label>
       <button id="gExpandAll">すべて開く</button>
       <button id="gCollapseAll">すべて閉じる</button>
+      <label><input type="checkbox" id="gShowLoad"> 仕事量の表を表示</label>
+      <button id="gPrint">🖨 印刷</button>
       <button id="gAddProject" class="edit-only">＋ プロジェクトを追加</button>
       <button id="gAddTask" class="edit-only">＋ 小業務を追加</button>
     </div>
@@ -205,6 +272,11 @@ table.list td.nowrap{ white-space:nowrap; }
       <span>名前をクリックすると、内容や注意点を見る・直すことができます</span>
     </div>
     <div class="gwrap" id="gwrap"><div class="gantt" id="gantt"></div></div>
+    <div id="loadPanel" hidden>
+      <h2>仕事量(担当者ごと・月ごとの合計)</h2>
+      <p class="hint">数字は、その月にかかっている仕事の重さ(1〜3)の合計です。4〜6月の「重い(3)」の仕事なら、4・5・6月それぞれに3を足します。2人で担当する仕事は、それぞれの先生に数えます。完了した仕事も含みます。色が濃いほど多い月です。名前を押すと、ガントチャートをその先生の仕事だけにします(もう一度押すと全員に戻ります)。</p>
+      <div class="load-wrap" id="loadTable"></div>
+    </div>
   </section>
 
   <!-- ===== 仕事の一覧 ===== -->
@@ -320,6 +392,37 @@ table.list td.nowrap{ white-space:nowrap; }
 </div>
 <datalist id="memberNames"></datalist>
 
+<!-- ===== 印刷の画面 ===== -->
+<div class="overlay" id="printOverlay">
+  <div class="modal" style="width:620px">
+    <h2>ガントチャートを印刷</h2>
+    <div class="row"><span class="k">用紙</span><span class="v choices" id="prPaper">
+      <label><input type="radio" name="prPaper" value="A3"> A3横(掲示用・文字が大きい)</label>
+      <label><input type="radio" name="prPaper" value="A4"> A4横(配布用)</label>
+    </span></div>
+    <div class="row"><span class="k">期間</span><span class="v">
+      <select id="prFrom"></select> 〜 <select id="prTo"></select>
+      <button id="prThisMonth">今月と来月</button> <button id="prAllYear">1年間</button>
+    </span></div>
+    <div class="row"><span class="k">担当者</span><span class="v"><select id="prMember"></select></span></div>
+    <div class="row"><span class="k">プロジェクト</span><span class="v">
+      <div class="choices col" id="prProjects"></div>
+      <div style="margin-top:6px"><button id="prAll">すべて選ぶ</button> <button id="prNone">すべて外す</button></div>
+    </span></div>
+    <div class="row"><span class="k">そのほか</span><span class="v choices" style="flex-direction:column;gap:4px">
+      <label><input type="checkbox" id="prDone"> 完了した仕事も印刷する</label>
+      <label><input type="checkbox" id="prLoad"> 仕事量の表も印刷する</label>
+      <label><input type="checkbox" id="prFit"> 1枚に収める(仕事が多いと文字が小さくなります)</label>
+    </span></div>
+    <div class="hint">「印刷する」を押すと、印刷の画面が開きます。用紙の大きさと向きは自動で合わせます(A3 はプリンタが A3 に対応している必要があります)。PDF にするときは、送り先で「PDF に保存」を選んでください。</div>
+    <div class="err" id="prErr"></div>
+    <div class="foot"><span class="spacer"></span><button id="prCancel">やめる</button><button class="primary" id="prOk">印刷する</button></div>
+  </div>
+</div>
+
+<!-- 印刷する内容(印刷のときだけ組み立てる) -->
+<div id="printArea"></div>
+
 <!-- ===== 新規作成の画面 ===== -->
 <div class="overlay" id="newOverlay">
   <div class="modal" style="width:480px">
@@ -365,7 +468,8 @@ let lastLockStamp = 0;     // 最後に「編集中」の印を保存した時�
 const supportsFSA = 'showOpenFilePicker' in window;
 
 // 画面の表示の好み(人ごと。ブラウザに覚えておくだけで、データファイルには入れない)
-const view = loadPref('wp.view', { tab:'gantt', scale:'week', gFilter:'', gHideDone:false, lGroup:true, lHideDone:false, lFilter:'', sortKey:'start', sortDir:1 });
+const view = loadPref('wp.view', { tab:'gantt', scale:'week', gFilter:'', gHideDone:false, lGroup:true, lHideDone:false, lFilter:'', sortKey:'start', sortDir:1,
+  showLoad:false, prPaper:'A3', prLoad:true, prFit:false });
 const collapsed = new Set(loadPref('wp.collapsed', []));
 
 function loadPref(key, def){
@@ -390,6 +494,17 @@ function fmtMDW(s){ if(!isYmd(s)) return ''; return fmtMD(s)+'('+CONFIG.weekdays
 function weekdayOf(n){ return (n+4)%7; }
 function currentFiscalYear(){ const d = new Date(); return d.getMonth()>=3 ? d.getFullYear() : d.getFullYear()-1; }
 function fyRange(){ const fy = state.meta.fiscalYear; return { start: dayNum(fy+'-04-01'), end: dayNum((fy+1)+'-03-31') }; }
+// 年度の12か月(4月〜3月)。a・b はその月の初日・末日(日数)
+function fyMonths(){
+  const fy = state.meta.fiscalYear, out = [];
+  for(let i=0;i<12;i++){
+    const y = i<9 ? fy : fy+1, m = (i+3)%12+1;
+    const a = dayNum(y+'-'+pad2(m)+'-01');
+    const b = (m===12 ? dayNum((y+1)+'-01-01') : dayNum(y+'-'+pad2(m+1)+'-01')) - 1;
+    out.push({ y, m, a, b });
+  }
+  return out;
+}
 function memberName(id){ const m = state.meta.members.find(x=>x.id===id); return m ? m.name : ''; }
 function namesOf(ids){ return (ids||[]).map(memberName).filter(Boolean).join('・'); }
 function levelLabel(v){ const l = state.meta.workloadLevels.find(x=>x.value===v); return l ? l.label : ''; }
@@ -503,6 +618,7 @@ function renderFilters(){
     sel.value = view[id];
   });
   $('gHideDone').checked = view.gHideDone;
+  $('gShowLoad').checked = view.showLoad;
   $('lHideDone').checked = view.lHideDone;
   $('lGroup').checked = view.lGroup;
   document.querySelectorAll('#scaleSeg button').forEach(b=> b.classList.toggle('active', b.dataset.scale===view.scale));
@@ -535,15 +651,11 @@ function renderGantt(){
   const W = Math.round((end-start+1)*ppd);
   const x = n => Math.round((n-start)*ppd);
   const rows = ganttRows(view.gFilter, view.gHideDone);
-  const fy = state.meta.fiscalYear;
 
   // --- 見出し(1段目: 月、2段目: 週の始まりの日付 または 日にち) ---
   let months = '', lines = '', second = '';
-  for(let i=0;i<12;i++){
-    const y = i<9 ? fy : fy+1, m = (i+3)%12+1;
-    const a = dayNum(y+'-'+pad2(m)+'-01');
-    const b = (m===12 ? dayNum((y+1)+'-01-01') : dayNum(y+'-'+pad2(m+1)+'-01')) - 1;
-    months += '<div class="hcell" style="left:'+x(a)+'px;width:'+(x(b+1)-x(a))+'px">'+(view.scale==='month' ? m+'月' : y+'年'+m+'月')+'</div>';
+  for(const {y, m, a, b} of fyMonths()){
+    months +='<div class="hcell" style="left:'+x(a)+'px;width:'+(x(b+1)-x(a))+'px">'+(view.scale==='month' ? m+'月' : y+'年'+m+'月')+'</div>';
     lines += '<div class="vl month" style="left:'+x(a)+'px"></div>';
   }
   if(view.scale==='week'){
@@ -613,7 +725,73 @@ function renderGantt(){
   html += '<div class="gbg" style="left:var(--label-w);width:'+W+'px;top:'+hh+'px">'+lines+'</div>';
   box.style.width = 'calc(var(--label-w) + '+W+'px)';
   box.innerHTML = html;
+  renderLoad();
 }
+
+//////////////////////// 仕事量(偏りを見る表) ////////////////////////
+// 担当者 × 月 の仕事量の合計を出す。
+// 決まり(2026-09-27 ユーザーと確認): 期間中ずっとその重さとみなす(4〜6月の「重い(3)」→ 4・5・6月それぞれに3)。
+// 複数で担当する仕事は、担当者それぞれに同じ重さを足す。担当のない仕事は '' (担当なし)に数える。
+function monthLoad(tasks, months, memberIds){
+  const idx = new Map(memberIds.map((id,i)=>[id,i]));
+  const vals = memberIds.map(()=>months.map(()=>0));
+  const tips = memberIds.map(()=>months.map(()=>[]));
+  tasks.forEach(t=>{
+    const sp = taskSpan(t); if(!sp) return;
+    const who = t.assignees.length ? t.assignees : [''];
+    months.forEach((m,j)=>{
+      if(sp.b<m.a || sp.a>m.b) return;
+      who.forEach(id=>{
+        const i = idx.get(id); if(i===undefined) return;
+        vals[i][j] += t.workload;
+        tips[i][j].push(t.name+'('+levelLabel(t.workload)+')');
+      });
+    });
+  });
+  return { vals, tips };
+}
+// 表を組み立てる(画面と印刷で共通)。数字と色の濃さの両方で示す(白黒印刷でも分かるように)。
+function loadTableHtml(tasks, months, memberIds, selId){
+  const { vals, tips } = monthLoad(tasks, months, memberIds);
+  const max = Math.max(1, ...vals.flat());
+  const cell = (v, tip) => {
+    const r = v/max;
+    const style = v ? 'background:rgba(31,95,168,'+(0.08+0.72*r).toFixed(2)+');'+(r>0.55?'color:#fff;':'') : '';
+    return '<td style="'+style+'" title="'+esc(tip.join('\n'))+'">'+(v||'')+'</td>';
+  };
+  let h = '<table class="load"><thead><tr><th>担当</th>'+months.map(m=>'<th>'+m.m+'月</th>').join('')+'<th class="tot">合計</th></tr></thead><tbody>';
+  memberIds.forEach((id,i)=>{
+    const tot = vals[i].reduce((s,v)=>s+v, 0);
+    h += '<tr class="mem'+(id && id===selId ? ' sel' : '')+'" data-lmem="'+esc(id)+'"><td class="nm">'+esc(id ? memberName(id) : '(担当なし)')+'</td>'
+      + vals[i].map((v,j)=>cell(v, tips[i][j])).join('') + '<td class="tot">'+tot+'</td></tr>';
+  });
+  if(memberIds.length>1){
+    const sums = months.map((m,j)=>vals.reduce((s,row)=>s+row[j], 0));
+    h += '<tr class="sum"><td class="nm">全員の合計</td>'+sums.map(v=>'<td>'+(v||'')+'</td>').join('')+'<td class="tot">'+sums.reduce((s,v)=>s+v,0)+'</td></tr>';
+  }
+  return h + '</tbody></table>';
+}
+// 表に出す担当者: メンバー全員(+ 担当のない仕事があれば「担当なし」)
+function loadMemberIds(tasks){
+  const ids = state.meta.members.map(m=>m.id);
+  if(tasks.some(t=>!t.assignees.length)) ids.push('');
+  return ids;
+}
+function renderLoad(){
+  $('loadPanel').hidden = !view.showLoad;
+  $('gwrap').classList.toggle('with-load', view.showLoad);
+  if(!view.showLoad) return;
+  $('loadTable').innerHTML = state.tasks.length
+    ? loadTableHtml(state.tasks, fyMonths(), loadMemberIds(state.tasks), view.gFilter)
+    : '<p class="hint">まだ仕事が入っていません。</p>';
+}
+$('loadTable').addEventListener('click', e=>{
+  const tr = e.target.closest('tr[data-lmem]');
+  if(!tr || !tr.dataset.lmem) return;
+  view.gFilter = view.gFilter===tr.dataset.lmem ? '' : tr.dataset.lmem;
+  savePref(); renderFilters(); renderGantt();
+});
+$('gShowLoad').addEventListener('change', e=>{ view.showLoad = e.target.checked; savePref(); renderLoad(); });
 // 今日の位置が見えるように横に動かす(開いたときと、目盛りを変えたとき)
 function scrollGanttToToday(){
   if(!state) return;
@@ -636,6 +814,202 @@ $('gFilter').addEventListener('change', e=>{ view.gFilter = e.target.value; save
 $('gHideDone').addEventListener('change', e=>{ view.gHideDone = e.target.checked; savePref(); renderGantt(); });
 $('gExpandAll').addEventListener('click', ()=>{ collapsed.clear(); savePref(); renderGantt(); });
 $('gCollapseAll').addEventListener('click', ()=>{ state.projects.forEach(p=>collapsed.add(p.id)); savePref(); renderGantt(); });
+
+//////////////////////// 印刷 ////////////////////////
+// 印刷用のガントチャートは、画面のものとは別に、用紙の幅にちょうど収まるように組み立て直す(#printArea)。
+// 用紙ごとの大きさ。w・h は余白(8mm)を除いた印刷できる範囲(mm)。文字と行の高さはピクセル。
+// A3 は職員室などへの掲示用なので、離れても読めるよう文字を大きくしている。
+const PAPER = {
+  A3: { w:404, h:281, label:330, font:15, small:12, row:28, bar:14, h1:22 },
+  A4: { w:281, h:194, label:230, font:11, small:9.5, row:20, bar:10, h1:15 },
+};
+const mmToPx = mm => Math.floor(mm*96/25.4) - 4; // ブラウザの印刷は 1インチ=96ピクセル。少しだけ余裕を持たせる
+let printBuilt = false;
+
+// 小業務の期間を短い文字にする(例: 4/1〜4/8、〜4/8、6/13)
+function periodText(t){
+  if(t.start && t.due) return t.start===t.due ? fmtMD(t.due) : fmtMD(t.start)+'〜'+fmtMD(t.due);
+  return t.due ? '〜'+fmtMD(t.due) : fmtMD(t.start)+'〜';
+}
+// 印刷する行。期間にかからない仕事は出さない。小業務が1つも出ないプロジェクトも出さない。
+function printRows(opt){
+  const match = t => { const sp = taskSpan(t);
+    return sp && sp.b>=opt.range.a && sp.a<=opt.range.b
+      && (!opt.member || t.assignees.includes(opt.member))
+      && (opt.includeDone || t.status!=='完了'); };
+  const groups = sortedProjects().filter(p=>opt.projects.has(p.id)).map(p=>({ p, tasks: projectTasks(p.id) }));
+  if(opt.projects.has('')) groups.push({ p:null, tasks: state.tasks.filter(t=>!t.projectId) });
+  const rows = [];
+  groups.forEach(({p, tasks})=>{
+    const shown = tasks.filter(match).sort((a,b)=> taskDateKey(a).localeCompare(taskDateKey(b)) || a.order-b.order);
+    if(!shown.length) return;
+    rows.push({ kind:'proj', p });
+    shown.forEach(t=> rows.push({ kind:'task', t }));
+  });
+  return rows;
+}
+// W: 全体の幅(ピクセル)
+function printHtml(opt, W){
+  const P = PAPER[opt.paper];
+  const start = opt.range.a, end = opt.range.b;
+  const TW = W - P.label;                 // 横棒を描く部分の幅
+  const ppd = TW / (end-start+1);
+  const x = n => +((n-start)*ppd).toFixed(1);
+  const months = fyMonths().filter(m=>m.b>=start && m.a<=end);
+  const showWeeks = months.length <= 4;   // 短い期間のときだけ、週の目盛りも入れる
+
+  // --- 見出しと縦線 ---
+  let mh = '', wh = '', lines = '';
+  months.forEach(m=>{
+    const a = Math.max(m.a,start), b = Math.min(m.b,end);
+    mh += '<div class="p-hc" style="left:'+x(a)+'px;width:'+(x(b+1)-x(a))+'px">'+(months.length<=6 ? m.y+'年'+m.m+'月' : m.m+'月')+'</div>';
+    if(a>start) lines += '<div class="p-vl m" style="left:'+x(a)+'px"></div>';
+  });
+  if(showWeeks){
+    for(let n = start - ((weekdayOf(start)+6)%7); n<=end; n+=7){  // 週は月曜はじまり
+      const a = Math.max(n,start), b = Math.min(n+6,end);
+      wh += '<div class="p-hc" style="left:'+x(a)+'px;width:'+(x(b+1)-x(a))+'px">'+(n>=start ? fmtMD(numToYmd(n)) : '')+'</div>';
+      if(n>start) lines += '<div class="p-vl" style="left:'+x(n)+'px"></div>';
+    }
+  }
+  const tn = dayNum(todayYmd());
+  if(tn>=start && tn<=end) lines += '<div class="p-today" style="left:'+x(tn+0.5)+'px"></div>';
+
+  // --- 横棒と、その横の文字(はみ出しそうなときは横棒の左に出す) ---
+  const clip = sp => (!sp || sp.b<start || sp.a>end) ? null : { a:Math.max(sp.a,start), b:Math.min(sp.b,end) };
+  const bar = (c, cls) => c ? '<div class="'+cls+'" style="left:'+x(c.a)+'px;width:'+Math.max(4, x(c.b+1)-x(c.a))+'px"></div>' : '';
+  const note = (c, text, cls) => {
+    if(!c || !text) return '';
+    const ex = Math.max(x(c.a)+4, x(c.b+1));
+    const est = text.length*P.small + 10;   // 文字の幅の見積もり(多めに)
+    if(ex+6+est <= TW) return '<div class="p-note '+cls+'" style="left:'+(ex+5)+'px">'+esc(text)+'</div>';
+    if(x(c.a)-6-est >= 0) return '<div class="p-note '+cls+'" style="right:'+(TW-x(c.a)+5)+'px">'+esc(text)+'</div>';
+    // 左右どちらにも入らない(1年中続く仕事など)ときは、横棒の上に白地で重ねる
+    return '<div class="p-note in '+cls+'" style="left:'+(x(c.a)+8)+'px">'+esc(text)+'</div>';
+  };
+  let body = '';
+  printRows(opt).forEach(r=>{
+    if(r.kind==='proj'){
+      const p = r.p;
+      const c = p ? clip(projectSpan(p.id)) : null;
+      body += '<tr class="p-proj"><td class="p-label"><div class="p-lab"><span class="nm">'+esc(p ? (p.name||'(名前なし)') : '(プロジェクトに入っていない小業務)')+'</span></div></td>'
+        + '<td><div class="p-time">'+lines+(p ? bar(c, 'pbar'+(projectDone(p.id)?' done':''))
+        + note(c, p.owners.length ? '主担当 '+namesOf(p.owners) : '', '') : '')+'</div></td></tr>';
+    } else {
+      const t = r.t, od = isOverdue(t), c = clip(taskSpan(t));
+      body += '<tr class="p-task"><td class="p-label"><div class="p-lab"><span class="nm">'+esc(t.name||'(名前なし)')+'</span>'
+        + (od ? '<span class="p-st od">期限切れ</span>' : '<span class="p-st">'+t.status+'</span>')+'</div></td>'
+        + '<td><div class="p-time">'+lines+bar(c, 'bar '+STATUS_CLASS[t.status]+(od?' overdue':''))
+        + note(c, [namesOf(t.assignees), periodText(t)].filter(Boolean).join('　'), od?'od':'')+'</div></td></tr>';
+    }
+  });
+  if(!body) body = '<tr><td colspan="2" style="padding:20px;text-align:center">条件に合う仕事がありません。</td></tr>';
+
+  const m0 = months[0], m1 = months[months.length-1];
+  const today = new Date();
+  let html = '<div class="p-title"><h1>'+esc(state.meta.scopeName||'')+'　'+state.meta.fiscalYear+'年度　仕事の予定</h1>'
+    + '<span class="sub">期間 '+m0.y+'年'+m0.m+'月〜'+m1.y+'年'+m1.m+'月　担当 '+(opt.member ? esc(memberName(opt.member)) : '全員')
+    + (opt.includeDone ? '' : '(完了した仕事は省略)')+'　印刷 '+today.getFullYear()+'/'+(today.getMonth()+1)+'/'+today.getDate()+'</span></div>'
+    + '<div class="p-legend"><span><span class="bar st-todo"></span> 未着手</span><span><span class="bar st-doing"></span> 作業中</span>'
+    + '<span><span class="bar st-done"></span> 完了</span><span><span class="bar st-doing overdue"></span> 期限を過ぎて終わっていない</span>'
+    + '<span>赤い点線は印刷した日</span></div>'
+    + '<table class="p-gantt" style="width:'+W+'px"><colgroup><col style="width:'+P.label+'px"><col style="width:'+TW+'px"></colgroup>'
+    + '<thead><tr><th class="p-label"><div class="p-lab">プロジェクト / 小業務</div></th><th><div class="p-time p-head">'
+    + '<div class="p-hrow">'+mh+'</div>'+(showWeeks ? '<div class="p-hrow wk">'+wh+'</div>' : '')+'</div></th></tr></thead>'
+    + '<tbody>'+body+'</tbody></table>';
+
+  if(opt.includeLoad){
+    // 仕事量は、選んだプロジェクトの仕事で数える(進み具合に関係なく、すべて数える。画面の表と同じ決まり)
+    const tasks = state.tasks.filter(t=>opt.projects.has(t.projectId));
+    const ids = opt.member ? [opt.member] : loadMemberIds(tasks);
+    html += '<div class="p-load"><h2>仕事量(担当者ごと・月ごとの合計)</h2>' + loadTableHtml(tasks, months, ids, '')
+      + '<div class="hint">仕事の重さ(1〜3)を、その仕事の期間にかかる月それぞれに足した数です。2人で担当する仕事は、それぞれに数えます。完了した仕事も含みます。</div></div>';
+  }
+  return html;
+}
+// 印刷の内容を組み立てる。「1枚に収める」ときは、いったん組み立てて高さを測り、縮める割合を決めて組み立て直す。
+function buildPrint(opt){
+  const P = PAPER[opt.paper];
+  const area = $('printArea');
+  const vars = '--p-font:'+P.font+'px;--p-small:'+P.small+'px;--p-row:'+P.row+'px;--p-bar:'+P.bar+'px;--p-h1:'+P.h1+'px;';
+  const W = mmToPx(P.w), H = mmToPx(P.h);
+  const put = (w, zoom) => { area.innerHTML = '<div class="p-root" style="'+vars+'width:'+w+'px;'+(zoom<1?'zoom:'+zoom.toFixed(4)+';':'')+'">'+printHtml(opt, w)+'</div>'; };
+  put(W, 1);
+  if(opt.fit){
+    // 画面の外に一時的に表示して、高さを測る
+    area.style.cssText = 'display:block;position:absolute;left:-100000px;top:0;';
+    const h = area.firstChild.offsetHeight;
+    area.style.cssText = '';
+    // 縮めた分だけ幅を広げて組み立て直すと、縮めたあとも用紙の幅いっぱいになる
+    if(h > H){ const z = H/h; put(Math.floor(W/z), z); }
+  }
+  $('pageStyle').textContent = '@page{ size:'+opt.paper+' landscape; margin:8mm; }';
+  document.body.classList.add('printing');
+  printBuilt = true;
+}
+function clearPrint(){ $('printArea').innerHTML = ''; document.body.classList.remove('printing'); printBuilt = false; }
+// 年度の中の何か月目か(0=4月)。今日が年度の外なら 0
+function currentMonthIndex(){
+  const tn = dayNum(todayYmd());
+  const i = fyMonths().findIndex(m=>tn>=m.a && tn<=m.b);
+  return i<0 ? 0 : i;
+}
+function openPrintDialog(){
+  if(!state) return;
+  const months = fyMonths();
+  const monthOpts = months.map((m,i)=>'<option value="'+i+'">'+m.m+'月</option>').join('');
+  $('prFrom').innerHTML = monthOpts; $('prTo').innerHTML = monthOpts;
+  $('prFrom').value = 0; $('prTo').value = 11;
+  document.querySelectorAll('input[name=prPaper]').forEach(r=> r.checked = r.value===view.prPaper);
+  $('prMember').innerHTML = '<option value="">全員</option>' + state.meta.members.map(m=>'<option value="'+esc(m.id)+'">'+esc(m.name)+'</option>').join('');
+  $('prMember').value = view.gFilter;
+  const items = sortedProjects().map(p=>({ id:p.id, name:p.name||'(名前なし)' }));
+  if(state.tasks.some(t=>!t.projectId)) items.push({ id:'', name:'(プロジェクトに入っていない小業務)' });
+  $('prProjects').innerHTML = items.map(it=>'<label><input type="checkbox" data-prproj="'+esc(it.id)+'" checked> '+esc(it.name)+'</label>').join('') || '<span class="hint">プロジェクトがありません。</span>';
+  $('prDone').checked = !view.gHideDone;
+  $('prLoad').checked = view.prLoad;
+  $('prFit').checked = view.prFit;
+  $('prErr').textContent = '';
+  $('printOverlay').classList.add('show');
+}
+function readPrintOptions(){
+  const months = fyMonths();
+  const from = Number($('prFrom').value), to = Number($('prTo').value);
+  const paper = (document.querySelector('input[name=prPaper]:checked')||{}).value || 'A3';
+  return {
+    paper, from, to,
+    range: { a: months[Math.min(from,to)].a, b: months[Math.max(from,to)].b },
+    member: $('prMember').value,
+    projects: new Set([...document.querySelectorAll('[data-prproj]:checked')].map(c=>c.dataset.prproj)),
+    includeDone: $('prDone').checked,
+    includeLoad: $('prLoad').checked,
+    fit: $('prFit').checked,
+  };
+}
+$('gPrint').addEventListener('click', openPrintDialog);
+$('prCancel').addEventListener('click', ()=>closeOverlay('printOverlay'));
+$('prThisMonth').addEventListener('click', ()=>{ const i = currentMonthIndex(); $('prFrom').value = i; $('prTo').value = Math.min(11, i+1); });
+$('prAllYear').addEventListener('click', ()=>{ $('prFrom').value = 0; $('prTo').value = 11; });
+$('prAll').addEventListener('click', ()=> document.querySelectorAll('[data-prproj]').forEach(c=>c.checked = true));
+$('prNone').addEventListener('click', ()=> document.querySelectorAll('[data-prproj]').forEach(c=>c.checked = false));
+$('prOk').addEventListener('click', ()=>{
+  const opt = readPrintOptions();
+  if(opt.from > opt.to){ $('prErr').textContent = '期間の始まりの月が、終わりの月より後になっています。'; return; }
+  if(!opt.projects.size){ $('prErr').textContent = '印刷するプロジェクトを1つ以上選んでください。'; return; }
+  view.prPaper = opt.paper; view.prLoad = opt.includeLoad; view.prFit = opt.fit; savePref();
+  closeOverlay('printOverlay');
+  buildPrint(opt);
+  setTimeout(()=>window.print(), 50); // 組み立てた内容が画面に反映されてから印刷の画面を開く
+});
+// 「印刷」ボタンを使わずに Ctrl+P で印刷したときも、ガントチャート全体(前回の用紙)を印刷する
+window.addEventListener('beforeprint', ()=>{
+  if(printBuilt || !state) return;
+  const all = new Set(state.projects.map(p=>p.id)); all.add('');
+  const { start, end } = fyRange();
+  buildPrint({ paper:view.prPaper, range:{ a:start, b:end }, member:view.gFilter, projects:all,
+    includeDone:!view.gHideDone, includeLoad:view.prLoad, fit:view.prFit });
+});
+window.addEventListener('afterprint', clearPrint);
 
 //////////////////////// 仕事の一覧 ////////////////////////
 const LIST_COLS = [
