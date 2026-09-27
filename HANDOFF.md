@@ -8,7 +8,7 @@
 
 - 2026-09-27、別のセッション(`projects` フォルダで開いたもの)でユーザーと要望を整理し、フォルダ・説明書類・Git の土台だけを作った。
 - **次のセッションでは、まずこのファイルの「1. ユーザーの要望」「2. 決まっていること」を読み、「4. 次のセッションで最初に確認すること」をユーザーに確かめてから、画面の構成案を示す。コードを書くのは、ユーザーが案を確認してから**(指示文集 `ClaudeCode指示文.md` の⑦と同じ進め方)。
-- GitHub のリポジトリはまだ作っていない(作るかどうか・公開か非公開かはユーザーが決める)。
+- GitHub: https://github.com/soichiroteacher/work-planner(**非公開**、ブランチ main。2026-09-27 にユーザーの依頼で作成)。アプリのファイルを変えたら commit・push する。
 - リンク集(`../index.html`)には、アプリができてから追加する(今追加すると、開けないリンクになるため)。アプリ一覧(`../README.md`)には「作成中」として載せてある。
 
 ## 1. ユーザーの要望(2026-09-27 に聞き取ったもの。ユーザーの言葉をなるべくそのまま残す)
@@ -104,7 +104,7 @@
 
 ## 5. 作業の決まり(全アプリ共通のルールより)
 
-- アプリのファイルを変えたら、`.git` を除いてフォルダ全体を `C:\Users\idolo\Documents\projects\appcopy\work-planner\` にコピーする。GitHub のリモートができたら、あわせて commit・push する(force push はしない)。
+- アプリのファイルを変えたら、`.git` を除いてフォルダ全体を `C:\Users\idolo\Documents\projects\appcopy\work-planner\` にコピーする。あわせて GitHub へ commit・push する(force push はしない)。
 - 実データ(実際の先生の名前が入ったデータファイル・バックアップ)はこのフォルダに置かない。動作確認は架空の名前のサンプルで行う。
 - 機能を変えたら README.md・CHANGELOG.md・このファイルを同時に更新する。
 - 動作確認は Browser pane で行う。このフォルダの `.claude/launch.json` に開発用サーバーの設定(名前 `work-planner`、http://localhost:8104)がある。サーバー本体は `projects/.claude/serve-dir.ps1`(アプリのフォルダの外にあり、配布物には入らない)。この PC には Node.js・Python がない。
