@@ -1,0 +1,1268 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>仕事管理</title>
+<!--
+  仕事管理(分掌・学年・学校全体)
+  - HTML 1ファイルで動く。外部ライブラリは使っていない。
+  - Chrome / Edge 専用(データファイルへの直接保存に File System Access API を使うため)。
+  - 作りの説明は HANDOFF.md、使い方は README.md を参照。
+-->
+<style>
+:root{
+  --ink:#222; --sub:#666; --line:#ccc; --line-strong:#888;
+  --bg:#fff; --bg-soft:#f4f6f8; --accent:#1f5fa8; --accent-soft:#e3edf8;
+  --warn:#c0392b; --warn-soft:#fdecea; --ok:#2e7d32;
+  --label-w:300px;   /* ガントチャートの左側(名前の列)の幅 */
+  --row-h:34px;
+}
+*{ box-sizing:border-box; }
+body{ margin:0; font-family:"Yu Gothic UI","Meiryo",sans-serif; font-size:16px; color:var(--ink); background:var(--bg); }
+button{ font:inherit; font-size:15px; padding:6px 14px; border:1px solid var(--line-strong); background:#fff; border-radius:6px; cursor:pointer; }
+button:hover:not(:disabled){ background:var(--bg-soft); }
+button:disabled{ opacity:.45; cursor:default; }
+button.primary{ background:var(--accent); color:#fff; border-color:var(--accent); }
+button.primary:hover:not(:disabled){ background:#174b86; }
+button.danger{ color:var(--warn); border-color:var(--warn); }
+input,select,textarea{ font:inherit; font-size:15px; padding:5px 8px; border:1px solid var(--line-strong); border-radius:5px; }
+input:disabled,select:disabled,textarea:disabled{ background:#f3f3f3; color:#444; }
+label{ cursor:pointer; }
+[hidden]{ display:none !important; }
+
+/* ===== 上の帯 ===== */
+header.top{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 14px; background:var(--bg-soft); border-bottom:1px solid var(--line); }
+header.top h1{ font-size:18px; margin:0 12px 0 0; }
+#scopeTitle{ font-weight:bold; font-size:17px; margin-right:auto; }
+#status{ font-size:13px; color:var(--sub); }
+#status.dirty{ color:var(--warn); }
+#status.saved{ color:var(--ok); }
+.edit-badge{ font-size:14px; padding:3px 10px; border-radius:12px; background:#eee; }
+.edit-badge.on{ background:#fff3c4; border:1px solid #d9b100; }
+#lockWarning{ font-size:14px; color:var(--warn); font-weight:bold; }
+#fileName{ font-size:13px; color:var(--sub); }
+
+nav.tabs{ display:flex; gap:4px; padding:8px 14px 0; border-bottom:2px solid var(--accent); }
+nav.tabs button{ border-radius:8px 8px 0 0; border-bottom:none; padding:8px 20px; font-size:16px; }
+nav.tabs button.active{ background:var(--accent); color:#fff; border-color:var(--accent); }
+main{ padding:12px 14px; }
+.toolbar{ display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; margin-bottom:10px; }
+.seg{ display:inline-flex; }
+.seg button{ border-radius:0; margin-left:-1px; }
+.seg button:first-child{ border-radius:6px 0 0 6px; }
+.seg button:last-child{ border-radius:0 6px 6px 0; }
+.seg button.active{ background:var(--accent); color:#fff; border-color:var(--accent); }
+.hint{ font-size:13px; color:var(--sub); }
+
+.banner{ padding:18px; border:1px solid var(--line); border-radius:8px; background:var(--bg-soft); margin:10px 0; }
+.banner p{ margin:0 0 10px; }
+.banner .btns{ display:flex; gap:10px; flex-wrap:wrap; }
+
+/* ===== ガントチャート ===== */
+.gwrap{ overflow:auto; border:1px solid var(--line-strong); max-height:calc(100vh - 190px); position:relative; background:#fff; }
+.gantt{ position:relative; }
+.grow{ display:flex; height:var(--row-h); border-bottom:1px solid #e6e6e6; }
+.glabel{ position:sticky; left:0; z-index:3; width:var(--label-w); min-width:var(--label-w); background:#fff; border-right:1px solid var(--line-strong);
+  display:flex; align-items:center; gap:6px; padding:0 8px; overflow:hidden; white-space:nowrap; cursor:pointer; }
+.glabel:hover{ background:#f0f5fb; }
+.glabel .nm{ overflow:hidden; text-overflow:ellipsis; }
+.glabel .who{ margin-left:auto; font-size:13px; color:var(--sub); flex-shrink:0; }
+.grow.proj .glabel{ font-weight:bold; background:#f7f7f7; }
+.grow.proj{ background:#fafafa; }
+.grow.task .glabel{ padding-left:30px; }
+.toggle{ width:22px; text-align:center; flex-shrink:0; font-size:13px; color:var(--sub); border-radius:4px; }
+.toggle:hover{ background:#dde6f0; }
+.gtime{ position:relative; flex-shrink:0; }
+.ghead{ position:sticky; top:0; z-index:5; height:auto; background:#fff; border-bottom:2px solid var(--line-strong); }
+.ghead .glabel{ z-index:6; cursor:default; font-weight:bold; }
+.ghead .glabel:hover{ background:#fff; }
+.hrow{ position:relative; height:26px; }
+.hrow + .hrow{ border-top:1px solid #e6e6e6; }
+.hcell{ position:absolute; top:0; height:100%; border-left:1px solid var(--line); font-size:13px; text-align:center; line-height:26px; overflow:hidden; white-space:nowrap; }
+.hcell.sun{ color:var(--warn); } .hcell.sat{ color:var(--accent); }
+.gbg{ position:absolute; top:0; bottom:0; pointer-events:none; z-index:1; }
+.gbg .vl{ position:absolute; top:0; bottom:0; border-left:1px solid #e3e3e3; }
+.gbg .vl.month{ border-left:1px solid #bbb; }
+.gbg .we{ position:absolute; top:0; bottom:0; background:#f3f3f3; }
+.gbg .today{ position:absolute; top:0; bottom:0; border-left:2px solid var(--warn); }
+.today-tag{ position:absolute; top:0; font-size:11px; color:#fff; background:var(--warn); padding:0 4px; border-radius:3px; transform:translateX(-50%); z-index:2; line-height:16px; }
+.bar{ position:absolute; top:8px; height:18px; border:2px solid var(--accent); border-radius:4px; z-index:2; cursor:pointer; min-width:8px; }
+.bar.st-todo{ background:#fff; }
+.bar.st-doing{ background:repeating-linear-gradient(135deg, var(--accent) 0 3px, #fff 3px 7px); }
+.bar.st-done{ background:#9aa3ad; border-color:#9aa3ad; }
+.bar.overdue{ border-color:var(--warn); border-width:3px; }
+.bar.overdue.st-doing{ background:repeating-linear-gradient(135deg, var(--warn) 0 3px, #fff 3px 7px); }
+.bar-note{ position:absolute; top:8px; font-size:13px; line-height:18px; white-space:nowrap; color:var(--sub); z-index:2; pointer-events:none; }
+.bar-note.overdue{ color:var(--warn); font-weight:bold; }
+.pbar{ position:absolute; top:14px; height:7px; background:#555; z-index:2; cursor:pointer; }
+.pbar::before,.pbar::after{ content:""; position:absolute; top:0; width:3px; height:13px; background:#555; }
+.pbar::before{ left:0; } .pbar::after{ right:0; }
+.pbar.done{ background:#aaa; } .pbar.done::before,.pbar.done::after{ background:#aaa; }
+.st-mark{ font-size:12px; padding:0 5px; border-radius:3px; border:1px solid var(--line-strong); flex-shrink:0; }
+.st-mark.st-doing{ border-color:var(--accent); color:var(--accent); }
+.st-mark.st-done{ background:#eee; color:#777; }
+.od-mark{ font-size:12px; color:#fff; background:var(--warn); padding:0 5px; border-radius:3px; flex-shrink:0; }
+.legend{ display:flex; gap:14px; align-items:center; font-size:13px; color:var(--sub); flex-wrap:wrap; }
+.legend .bar{ position:static; display:inline-block; width:34px; vertical-align:middle; cursor:default; }
+.empty-msg{ padding:30px; text-align:center; color:var(--sub); }
+
+/* ===== 仕事の一覧 ===== */
+.tbl-wrap{ overflow:auto; max-height:calc(100vh - 190px); border:1px solid var(--line-strong); }
+table.list{ border-collapse:collapse; width:100%; min-width:1000px; }
+table.list th, table.list td{ border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+table.list th{ position:sticky; top:0; background:#eef2f6; z-index:2; white-space:nowrap; cursor:pointer; user-select:none; }
+table.list th:hover{ background:#dde6f0; }
+table.list th .arrow{ color:var(--accent); font-size:12px; }
+table.list tr.task-row{ cursor:pointer; }
+table.list tr.task-row:hover td{ background:#f0f5fb; }
+table.list tr.proj-row td{ background:#f4f4f4; font-weight:bold; }
+table.list tr.done-row td{ color:#888; }
+table.list td.memo{ max-width:260px; font-size:14px; color:#444; white-space:pre-wrap; }
+table.list td.nowrap{ white-space:nowrap; }
+.caution{ color:var(--warn); font-weight:bold; }
+.proj-row .pbtns{ display:inline-flex; gap:6px; margin-left:14px; font-weight:normal; vertical-align:middle; }
+.proj-row .pbtns button{ font-size:13px; padding:2px 10px; }
+
+/* ===== 設定 ===== */
+.settings{ max-width:760px; }
+.settings section{ border:1px solid var(--line); border-radius:8px; padding:14px 18px; margin-bottom:14px; }
+.settings h2{ font-size:17px; margin:0 0 10px; }
+.settings .row{ display:flex; align-items:center; gap:10px; margin:8px 0; flex-wrap:wrap; }
+.settings .row > .k{ width:140px; flex-shrink:0; }
+.member-list{ display:flex; flex-direction:column; gap:6px; }
+.member-list .m{ display:flex; gap:6px; align-items:center; }
+
+/* ===== 入力画面(ダイアログ) ===== */
+.overlay{ position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:flex-start; justify-content:center; z-index:50; overflow:auto; padding:30px 10px; }
+.overlay.show{ display:flex; }
+.modal{ background:#fff; border-radius:10px; width:640px; max-width:100%; padding:18px 22px; box-shadow:0 8px 30px rgba(0,0,0,.25); }
+.modal h2{ font-size:18px; margin:0 0 12px; }
+.modal .row{ display:flex; gap:10px; margin:10px 0; align-items:flex-start; }
+.modal .row > .k{ width:110px; flex-shrink:0; padding-top:6px; }
+.modal .row > .v{ flex:1; }
+.modal input[type=text], .modal textarea, .modal select{ width:100%; }
+.modal textarea{ min-height:64px; resize:vertical; }
+.modal .choices{ display:flex; flex-wrap:wrap; gap:6px 14px; padding-top:5px; }
+.modal .foot{ display:flex; gap:10px; margin-top:16px; align-items:center; }
+.modal .foot .spacer{ flex:1; }
+.modal .err{ color:var(--warn); font-size:14px; margin-top:6px; }
+.modal .readonly-note{ background:#fff3c4; padding:6px 10px; border-radius:5px; font-size:14px; margin-bottom:8px; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>仕事管理</h1>
+  <span id="scopeTitle"></span>
+  <span id="lockWarning" hidden></span>
+  <span id="editBadge" class="edit-badge">閲覧のみ</span>
+  <button id="btnEdit">✏ 編集する</button>
+  <button id="btnReload" title="ほかの先生が保存した最新の内容を読み直します">↻ 最新にする</button>
+  <button id="btnSave" disabled>保存</button>
+  <button id="btnOpen">開く</button>
+  <button id="btnNew">新規作成</button>
+  <span id="status"></span>
+  <span id="fileName"></span>
+</header>
+
+<nav class="tabs">
+  <button data-tab="gantt" class="active">ガントチャート</button>
+  <button data-tab="list">仕事の一覧</button>
+  <button data-tab="settings">設定</button>
+</nav>
+
+<main>
+  <div id="startBanner" class="banner" hidden>
+    <p><b>データファイルを開いてください。</b>分掌・学年ごとのデータファイル(.json)は、校務共有サーバーに置いてあります。</p>
+    <p class="hint">はじめて使うときは「新規作成」を押してください。どんなアプリか試すだけなら「見本を表示する」を押してください(見本は保存されません)。</p>
+    <div class="btns">
+      <button class="primary" id="bnOpen">データファイルを開く</button>
+      <button id="bnNew">新規作成</button>
+      <button id="bnSample">見本を表示する</button>
+    </div>
+    <div id="bnLast" style="margin-top:12px" hidden></div>
+  </div>
+
+  <!-- ===== ガントチャート ===== -->
+  <section id="tab-gantt">
+    <div class="toolbar">
+      <span class="seg" id="scaleSeg">
+        <button data-scale="month">月ごと</button><button data-scale="week">週ごと</button><button data-scale="day">日ごと</button>
+      </span>
+      <label>担当者：<select id="gFilter"></select></label>
+      <label><input type="checkbox" id="gHideDone"> 完了を隠す</label>
+      <button id="gExpandAll">すべて開く</button>
+      <button id="gCollapseAll">すべて閉じる</button>
+      <button id="gAddProject" class="edit-only">＋ プロジェクトを追加</button>
+      <button id="gAddTask" class="edit-only">＋ 小業務を追加</button>
+    </div>
+    <div class="toolbar legend">
+      <span><span class="bar st-todo"></span> 未着手</span>
+      <span><span class="bar st-doing"></span> 作業中</span>
+      <span><span class="bar st-done"></span> 完了</span>
+      <span><span class="bar st-doing overdue"></span> <span class="od-mark">期限切れ</span> 期限を過ぎて終わっていない</span>
+      <span>名前をクリックすると、内容や注意点を見る・直すことができます</span>
+    </div>
+    <div class="gwrap" id="gwrap"><div class="gantt" id="gantt"></div></div>
+  </section>
+
+  <!-- ===== 仕事の一覧 ===== -->
+  <section id="tab-list" hidden>
+    <div class="toolbar">
+      <label><input type="checkbox" id="lGroup" checked> プロジェクトごとにまとめる</label>
+      <label><input type="checkbox" id="lHideDone"> 完了を隠す</label>
+      <label>担当者：<select id="lFilter"></select></label>
+      <button id="lAddProject" class="edit-only">＋ プロジェクトを追加</button>
+      <button id="lAddTask" class="edit-only">＋ 小業務を追加</button>
+      <span class="hint">列の見出しを押すと並べ替えます(もう一度押すと逆順)。</span>
+    </div>
+    <div class="tbl-wrap"><table class="list" id="listTable"></table></div>
+  </section>
+
+  <!-- ===== 設定 ===== -->
+  <section id="tab-settings" hidden>
+    <div class="settings">
+      <p class="hint" id="setReadonlyNote">設定を変えるには、上の「編集する」を押してください。</p>
+      <section>
+        <h2>このファイルの単位</h2>
+        <div class="row"><span class="k">種類</span><span id="setScopeType"></span></div>
+        <div class="row"><span class="k">名前</span><input type="text" id="setScopeName" placeholder="例：教務部、1学年" style="width:260px"></div>
+        <div class="row"><span class="k">年度</span><input type="number" id="setYear" min="2000" max="2100" style="width:100px"> 年度(4月〜翌年3月)</div>
+      </section>
+      <section>
+        <h2>メンバー(担当者の候補)</h2>
+        <div class="member-list" id="memberList"></div>
+        <div class="row"><input type="text" id="newMember" placeholder="名前を入力" style="width:200px"><button id="btnAddMember">追加</button></div>
+      </section>
+      <section>
+        <h2>仕事量の段階</h2>
+        <p class="hint">3段階です。名前だけ変えられます。数字(1〜3)は、仕事量の合計を出すときに使います。</p>
+        <div id="levelList"></div>
+      </section>
+      <section>
+        <h2>定例会</h2>
+        <div class="row"><span class="k">定例会の曜日</span><select id="setMeetingDay"></select></div>
+      </section>
+      <section>
+        <h2>編集パスワード</h2>
+        <p class="hint">設定すると、「編集する」を押したときにパスワードを聞かれます。空のまま「設定」を押すと、パスワードなしになります。</p>
+        <div class="row"><span class="k">今の状態</span><span id="pwState"></span></div>
+        <div class="row"><span class="k">新しいパスワード</span><input type="password" id="newPw" style="width:200px"><button id="btnSetPw">設定</button></div>
+      </section>
+      <section>
+        <h2>バックアップと復元</h2>
+        <p class="hint">データファイルの控えを、日付の入った名前でダウンロードします。ファイルが壊れたり消えたりしたときは、「データを読み込む(復元)」で元に戻せます。</p>
+        <div class="row">
+          <button id="btnExport">データを書き出す(バックアップ)</button>
+          <button id="btnImport">データを読み込む(復元)</button>
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
+
+<!-- ===== 小業務の入力画面 ===== -->
+<div class="overlay" id="taskOverlay">
+  <div class="modal">
+    <h2 id="taskTitle">小業務</h2>
+    <div class="readonly-note" id="taskRO">閲覧のみです。直すときは、閉じてから「編集する」を押してください。</div>
+    <div class="row"><span class="k">プロジェクト</span><span class="v"><select id="tProject"></select></span></div>
+    <div class="row"><span class="k">小業務の名前</span><span class="v"><input type="text" id="tName"></span></div>
+    <div class="row"><span class="k">担当</span><span class="v choices" id="tAssignees"></span></div>
+    <div class="row"><span class="k">期間</span><span class="v"><input type="date" id="tStart"> 〜 <input type="date" id="tDue"><div class="hint">1日で終わる仕事は、同じ日を入れてください。始まりが決まっていなければ、期限だけでもかまいません。</div></span></div>
+    <div class="row"><span class="k">進み具合</span><span class="v choices" id="tStatus"></span></div>
+    <div class="row"><span class="k">仕事量</span><span class="v choices" id="tWorkload"></span></div>
+    <div class="row"><span class="k">内容のメモ</span><span class="v"><textarea id="tMemo"></textarea></span></div>
+    <div class="row"><span class="k">注意点</span><span class="v"><textarea id="tCaution" placeholder="例：前年度は〇〇で遅れた。△△に早めに連絡する"></textarea></span></div>
+    <div class="row"><span class="k">毎年</span><span class="v choices"><label><input type="checkbox" id="tRepeat"> 毎年くり返す仕事(次の年度に写す)</label></span></div>
+    <div class="err" id="taskErr"></div>
+    <div class="foot">
+      <button class="danger edit-only" id="tDelete">この小業務を削除</button>
+      <span class="spacer"></span>
+      <button id="tCancel">閉じる</button>
+      <button class="primary edit-only" id="tOk">決定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== プロジェクトの入力画面 ===== -->
+<div class="overlay" id="projOverlay">
+  <div class="modal">
+    <h2 id="projTitle">プロジェクト</h2>
+    <div class="readonly-note" id="projRO">閲覧のみです。直すときは、閉じてから「編集する」を押してください。</div>
+    <div class="row"><span class="k">名前</span><span class="v"><input type="text" id="pName" placeholder="例：入学式、学校公開"></span></div>
+    <div class="row"><span class="k">主担当</span><span class="v choices" id="pOwners"></span></div>
+    <div class="row"><span class="k">内容のメモ</span><span class="v"><textarea id="pMemo"></textarea></span></div>
+    <div class="row"><span class="k">注意点</span><span class="v"><textarea id="pCaution"></textarea></span></div>
+    <div class="row"><span class="k">毎年</span><span class="v choices"><label><input type="checkbox" id="pRepeat"> 毎年くり返す(次の年度に写す)</label></span></div>
+    <div class="row edit-only"><span class="k">並び順</span><span class="v"><button id="pUp">▲ 上へ</button> <button id="pDown">▼ 下へ</button></span></div>
+    <div class="hint" id="pPeriod"></div>
+    <div class="err" id="projErr"></div>
+    <div class="foot">
+      <button class="danger edit-only" id="pDelete">このプロジェクトを削除</button>
+      <span class="spacer"></span>
+      <button id="pCancel">閉じる</button>
+      <button class="primary edit-only" id="pOk">決定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 「編集する」の画面 ===== -->
+<div class="overlay" id="editOverlay">
+  <div class="modal" style="width:440px">
+    <h2>編集を始めます</h2>
+    <div class="row"><span class="k">お名前</span><span class="v"><input type="text" id="eName" list="memberNames"><div class="hint">ほかの先生に「○○先生が編集中」と表示されます。</div></span></div>
+    <div class="row" id="ePwRow"><span class="k">パスワード</span><span class="v"><input type="password" id="ePw"></span></div>
+    <div class="err" id="eErr"></div>
+    <div class="foot"><span class="spacer"></span><button id="eCancel">やめる</button><button class="primary" id="eOk">編集を始める</button></div>
+  </div>
+</div>
+<datalist id="memberNames"></datalist>
+
+<!-- ===== 新規作成の画面 ===== -->
+<div class="overlay" id="newOverlay">
+  <div class="modal" style="width:480px">
+    <h2>新しいデータファイルを作る</h2>
+    <div class="row"><span class="k">種類</span><span class="v choices" id="nType"></span></div>
+    <div class="row"><span class="k">名前</span><span class="v"><input type="text" id="nName" placeholder="例：教務部、1学年"></span></div>
+    <div class="row"><span class="k">年度</span><span class="v"><input type="number" id="nYear" style="width:100px"> 年度</span></div>
+    <div class="hint">「作る」を押すと、保存する場所を聞かれます。校務共有サーバーの、この分掌・学年のフォルダを選んでください。</div>
+    <div class="err" id="nErr"></div>
+    <div class="foot"><span class="spacer"></span><button id="nCancel">やめる</button><button class="primary" id="nOk">作る</button></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+//////////////////////// 設定(学校ごとに変える可能性があるもの) ////////////////////////
+const CONFIG = {
+  // 編集中の表示を、何分で「もう編集していない」とみなすか。
+  // 編集中の人がブラウザを閉じると「編集を終える」が保存されないため、一定時間で自動的に消えるようにしている。
+  lockStaleMinutes: 15,
+  // 編集中、何も入力していなくても「編集中」の印を保存し直す間隔(分)。lockStaleMinutes より短くする。
+  heartbeatMinutes: 5,
+  // 入力してから自動保存するまでの待ち時間(ミリ秒)。共有サーバーへの書き込み回数を減らすため少し待つ。
+  autosaveDelayMs: 2500,
+  // ガントチャートの1日あたりの幅(ピクセル)。月ごと・週ごと・日ごと
+  pxPerDay: { month: 2.8, week: 6, day: 26 },
+  statuses: ['未着手', '作業中', '完了'],
+  scopeTypes: ['分掌', '学年', '学校全体'],
+  defaultWorkloadLevels: [ { value:1, label:'軽い' }, { value:2, label:'ふつう' }, { value:3, label:'重い' } ],
+  weekdays: ['日','月','火','水','木','金','土'],
+};
+const FORMAT_VERSION = 1;
+const STATUS_CLASS = { '未着手':'st-todo', '作業中':'st-doing', '完了':'st-done' };
+
+//////////////////////// 状態 ////////////////////////
+let state = null;          // 今開いているデータ(データファイルの中身そのもの)
+let fileHandle = null;     // データファイル(保存先)
+let editing = false;       // 編集中か
+let dirty = false;         // 保存していない変更があるか
+let isSample = false;      // 見本を表示中か(見本は保存しない)
+let lastKnownModified = 0; // 最後に読み書きしたときのファイルの更新時刻(ほかの人の保存に気づくため)
+let lastLockStamp = 0;     // 最後に「編集中」の印を保存した時刻
+const supportsFSA = 'showOpenFilePicker' in window;
+
+// 画面の表示の好み(人ごと。ブラウザに覚えておくだけで、データファイルには入れない)
+const view = loadPref('wp.view', { tab:'gantt', scale:'week', gFilter:'', gHideDone:false, lGroup:true, lHideDone:false, lFilter:'', sortKey:'start', sortDir:1 });
+const collapsed = new Set(loadPref('wp.collapsed', []));
+
+function loadPref(key, def){
+  try{ const v = JSON.parse(localStorage.getItem(key)); return (v && typeof v==='object') ? Object.assign(Array.isArray(def)?[]:{}, def, v) : def; }catch(e){ return def; }
+}
+function savePref(){
+  try{ localStorage.setItem('wp.view', JSON.stringify(view)); localStorage.setItem('wp.collapsed', JSON.stringify([...collapsed])); }catch(e){}
+}
+
+//////////////////////// 小さな道具 ////////////////////////
+const $ = id => document.getElementById(id);
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function pad2(n){ return String(n).padStart(2,'0'); }
+function newId(prefix){ return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+// 日付は 'YYYY-MM-DD' の文字列で持つ。計算は「1970-01-01 からの日数」に直して行う(時差の影響を受けないよう UTC で数える)。
+function dayNum(s){ const [y,m,d] = s.split('-').map(Number); return Math.floor(Date.UTC(y,m-1,d)/86400000); }
+function numToYmd(n){ const d = new Date(n*86400000); return d.getUTCFullYear()+'-'+pad2(d.getUTCMonth()+1)+'-'+pad2(d.getUTCDate()); }
+function todayYmd(){ const d = new Date(); return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); }
+function isYmd(s){ return typeof s==='string' && /^\d{4}-\d{2}-\d{2}$/.test(s); }
+function fmtMD(s){ if(!isYmd(s)) return ''; const [,m,d] = s.split('-').map(Number); return m+'/'+d; }
+function fmtMDW(s){ if(!isYmd(s)) return ''; return fmtMD(s)+'('+CONFIG.weekdays[(dayNum(s)+4)%7]+')'; } // 1970-01-01 は木曜
+function weekdayOf(n){ return (n+4)%7; }
+function currentFiscalYear(){ const d = new Date(); return d.getMonth()>=3 ? d.getFullYear() : d.getFullYear()-1; }
+function fyRange(){ const fy = state.meta.fiscalYear; return { start: dayNum(fy+'-04-01'), end: dayNum((fy+1)+'-03-31') }; }
+function memberName(id){ const m = state.meta.members.find(x=>x.id===id); return m ? m.name : ''; }
+function namesOf(ids){ return (ids||[]).map(memberName).filter(Boolean).join('・'); }
+function levelLabel(v){ const l = state.meta.workloadLevels.find(x=>x.value===v); return l ? l.label : ''; }
+function isOverdue(t){ return t.status!=='完了' && isYmd(t.due) && t.due < todayYmd(); }
+// 名前に「先生」を付けて表示する(入力した名前にすでに付いているときはそのまま)
+function sensei(name){ if(!name) return 'ほかの先生'; return /先生$/.test(name) ? name : name+'先生'; }
+
+//////////////////////// データの形 ////////////////////////
+function emptyState(scopeType, scopeName, fy){
+  return {
+    formatVersion: FORMAT_VERSION,
+    app: 'work-planner',
+    meta: {
+      scopeType, scopeName, fiscalYear: fy,
+      members: [],
+      workloadLevels: CONFIG.defaultWorkloadLevels.map(x=>({...x})),
+      meetingWeekday: 3,
+      editPasswordHash: '',
+      savedAt: null, savedBy: '',
+    },
+    projects: [],
+    tasks: [],
+    meetings: [],
+    editLock: { active:false, since:null, by:'' },
+  };
+}
+// 読み込んだデータに足りない項目を補う(古い形式のファイルや、手で直したファイルも開けるように)。
+// ★ 新しい項目を増やしたら、ここにも必ず書き足すこと。
+function normalizeState(o){
+  if(!o || typeof o!=='object' || !o.meta) throw new Error('仕事管理のデータファイルではないようです。');
+  const base = emptyState('分掌', '', currentFiscalYear());
+  o.formatVersion = o.formatVersion || FORMAT_VERSION;
+  o.app = 'work-planner';
+  o.meta = Object.assign(base.meta, o.meta);
+  if(!CONFIG.scopeTypes.includes(o.meta.scopeType)) o.meta.scopeType = '分掌';
+  o.meta.fiscalYear = Number(o.meta.fiscalYear) || currentFiscalYear();
+  o.meta.members = (Array.isArray(o.meta.members)?o.meta.members:[]).filter(m=>m && m.id).map(m=>({ id:String(m.id), name:String(m.name||'') }));
+  if(!Array.isArray(o.meta.workloadLevels) || o.meta.workloadLevels.length===0) o.meta.workloadLevels = base.meta.workloadLevels;
+  o.projects = (Array.isArray(o.projects)?o.projects:[]).filter(p=>p && p.id).map((p,i)=>Object.assign({ name:'', owners:[], memo:'', caution:'', repeatYearly:true, order:i }, p));
+  o.tasks = (Array.isArray(o.tasks)?o.tasks:[]).filter(t=>t && t.id).map((t,i)=>{
+    t = Object.assign({ projectId:'', name:'', assignees:[], start:'', due:'', status:'未着手', workload:2, memo:'', caution:'', repeatYearly:true, order:i }, t);
+    if(!CONFIG.statuses.includes(t.status)) t.status = '未着手';
+    if(!isYmd(t.start)) t.start = '';
+    if(!isYmd(t.due)) t.due = '';
+    if(t.projectId && !o.projects.some(p=>p.id===t.projectId)) t.projectId = '';
+    if(!Array.isArray(t.assignees)) t.assignees = [];
+    t.workload = Number(t.workload) || 2;
+    return t;
+  });
+  if(!Array.isArray(o.meetings)) o.meetings = [];
+  if(!o.editLock || typeof o.editLock!=='object') o.editLock = { active:false, since:null, by:'' };
+  return o;
+}
+function sortedProjects(){ return state.projects.slice().sort((a,b)=>a.order-b.order); }
+// 小業務の期間(始まりがなければ期限の日だけ、期限がなければ始まりの日だけとみなす)
+function taskSpan(t){
+  const s = t.start || t.due, e = t.due || t.start;
+  if(!s) return null;
+  const a = dayNum(s), b = dayNum(e);
+  return a<=b ? {a,b} : {a:b, b:a};
+}
+function projectTasks(pid){ return state.tasks.filter(t=>t.projectId===pid); }
+function projectSpan(pid){
+  let a=Infinity, b=-Infinity;
+  projectTasks(pid).forEach(t=>{ const sp = taskSpan(t); if(sp){ a=Math.min(a,sp.a); b=Math.max(b,sp.b); } });
+  return a===Infinity ? null : {a,b};
+}
+function projectDone(pid){ const ts = projectTasks(pid); return ts.length>0 && ts.every(t=>t.status==='完了'); }
+// 小業務の並び順: 始まり(なければ期限)の早い順。日付のないものは最後。
+function taskDateKey(t){ return t.start || t.due || '9999-99-99'; }
+
+//////////////////////// 画面全体 ////////////////////////
+function renderAll(){
+  const has = !!state;
+  $('startBanner').hidden = has;
+  document.querySelectorAll('main > section').forEach(s=> s.hidden = !has || s.id !== 'tab-'+view.tab);
+  document.querySelectorAll('nav.tabs button').forEach(b=> b.classList.toggle('active', b.dataset.tab===view.tab));
+  renderTop();
+  if(!has) return;
+  renderFilters();
+  if(view.tab==='gantt') renderGantt();
+  if(view.tab==='list') renderList();
+  if(view.tab==='settings') renderSettings();
+}
+function renderTop(){
+  const has = !!state;
+  $('scopeTitle').textContent = has ? (state.meta.scopeName || '(名前なし)') + '　' + state.meta.fiscalYear + '年度' + (isSample ? '　【見本・保存されません】' : '') : '';
+  $('editBadge').textContent = editing ? '✏ 編集中' : '閲覧のみ';
+  $('editBadge').classList.toggle('on', editing);
+  $('btnEdit').textContent = editing ? '編集を終える' : '✏ 編集する';
+  $('btnEdit').disabled = !has;
+  $('btnReload').hidden = !fileHandle || editing;
+  $('btnSave').disabled = !editing || isSample;
+  $('fileName').textContent = fileHandle ? 'ファイル：' + fileHandle.name : '';
+  document.querySelectorAll('.edit-only').forEach(el=> el.hidden = !editing);
+  const w = $('lockWarning');
+  if(has && !editing && isLockFresh(state.editLock)){
+    const since = new Date(state.editLock.since);
+    w.textContent = '⚠ ' + sensei(state.editLock.by) + 'が編集中(' + since.getHours() + ':' + pad2(since.getMinutes()) + '〜)';
+    w.hidden = false;
+  } else w.hidden = true;
+  const names = has ? state.meta.members.map(m=>'<option value="'+esc(m.name)+'">').join('') : '';
+  $('memberNames').innerHTML = names;
+}
+function setStatus(text, cls){ const el = $('status'); el.textContent = text; el.className = cls||''; }
+function renderFilters(){
+  const opts = '<option value="">全員</option>' + state.meta.members.map(m=>'<option value="'+esc(m.id)+'">'+esc(m.name)+'</option>').join('');
+  ['gFilter','lFilter'].forEach(id=>{
+    const sel = $(id); sel.innerHTML = opts;
+    if(!state.meta.members.some(m=>m.id===view[id])) view[id] = '';
+    sel.value = view[id];
+  });
+  $('gHideDone').checked = view.gHideDone;
+  $('lHideDone').checked = view.lHideDone;
+  $('lGroup').checked = view.lGroup;
+  document.querySelectorAll('#scaleSeg button').forEach(b=> b.classList.toggle('active', b.dataset.scale===view.scale));
+}
+
+//////////////////////// ガントチャート ////////////////////////
+// 表示する行を組み立てる。プロジェクトの行の下に、その小業務の行を並べる。プロジェクトに入っていない小業務は最後にまとめる。
+function ganttRows(filter, hideDone){
+  const match = t => (!filter || t.assignees.includes(filter)) && !(hideDone && t.status==='完了');
+  const rows = [];
+  const groups = sortedProjects().map(p=>({ p, tasks: projectTasks(p.id) }));
+  const loose = state.tasks.filter(t=>!t.projectId);
+  if(loose.length) groups.push({ p:null, tasks: loose });
+  groups.forEach(({p, tasks})=>{
+    const shown = tasks.filter(match).sort((a,b)=> taskDateKey(a).localeCompare(taskDateKey(b)) || a.order-b.order);
+    if(p){
+      const ownerHit = filter && p.owners.includes(filter);
+      if(filter && !ownerHit && shown.length===0) return;               // 担当者で絞ったとき、関係のないプロジェクトは出さない
+      if(hideDone && projectDone(p.id)) return;                          // 全部終わったプロジェクトは隠す
+    } else if(shown.length===0) return;
+    rows.push({ kind:'proj', p });
+    if(!p || !collapsed.has(p.id)) shown.forEach(t=> rows.push({ kind:'task', t }));
+  });
+  return rows;
+}
+function renderGantt(){
+  const box = $('gantt');
+  const {start, end} = fyRange();
+  const ppd = CONFIG.pxPerDay[view.scale];
+  const W = Math.round((end-start+1)*ppd);
+  const x = n => Math.round((n-start)*ppd);
+  const rows = ganttRows(view.gFilter, view.gHideDone);
+  const fy = state.meta.fiscalYear;
+
+  // --- 見出し(1段目: 月、2段目: 週の始まりの日付 または 日にち) ---
+  let months = '', lines = '', second = '';
+  for(let i=0;i<12;i++){
+    const y = i<9 ? fy : fy+1, m = (i+3)%12+1;
+    const a = dayNum(y+'-'+pad2(m)+'-01');
+    const b = (m===12 ? dayNum((y+1)+'-01-01') : dayNum(y+'-'+pad2(m+1)+'-01')) - 1;
+    months += '<div class="hcell" style="left:'+x(a)+'px;width:'+(x(b+1)-x(a))+'px">'+(view.scale==='month' ? m+'月' : y+'年'+m+'月')+'</div>';
+    lines += '<div class="vl month" style="left:'+x(a)+'px"></div>';
+  }
+  if(view.scale==='week'){
+    // 週は月曜はじまり
+    let n = start - ((weekdayOf(start)+6)%7);
+    for(; n<=end; n+=7){
+      const a = Math.max(n,start), b = Math.min(n+6,end);
+      second += '<div class="hcell" style="left:'+x(a)+'px;width:'+(x(b+1)-x(a))+'px">'+(n>=start ? fmtMD(numToYmd(n)) : '')+'</div>';
+      if(n>start) lines += '<div class="vl" style="left:'+x(n)+'px"></div>';
+    }
+  } else if(view.scale==='day'){
+    for(let n=start;n<=end;n++){
+      const wd = weekdayOf(n), cls = wd===0 ? 'sun' : wd===6 ? 'sat' : '';
+      second += '<div class="hcell '+cls+'" style="left:'+x(n)+'px;width:'+Math.round(ppd)+'px">'+Number(numToYmd(n).slice(8))+'<br>'+CONFIG.weekdays[wd]+'</div>';
+      if(wd===0 || wd===6) lines += '<div class="we" style="left:'+x(n)+'px;width:'+Math.round(ppd)+'px"></div>';
+      lines += '<div class="vl" style="left:'+x(n)+'px"></div>';
+    }
+  }
+  const tn = dayNum(todayYmd());
+  const todayIn = tn>=start && tn<=end;
+  if(todayIn) lines += '<div class="today" style="left:'+(x(tn)+Math.round(ppd/2))+'px"></div>';
+  const secondRow = second ? '<div class="hrow" style="height:'+(view.scale==='day'?40:26)+'px;line-height:17px">'+second+'</div>' : '';
+  let html = '<div class="grow ghead"><div class="glabel">プロジェクト / 小業務</div><div class="gtime" style="width:'+W+'px">'
+    + '<div class="hrow">'+months+'</div>' + secondRow
+    + (todayIn ? '<div class="today-tag" style="left:'+(x(tn)+Math.round(ppd/2))+'px;top:2px">今日</div>' : '')
+    + '</div></div>';
+
+  // --- 本体 ---
+  const bar = (sp, cls, attrs) => {
+    if(!sp || sp.b<start || sp.a>end) return '';
+    const a = Math.max(sp.a,start), b = Math.min(sp.b,end);
+    return '<div class="'+cls+'" style="left:'+x(a)+'px;width:'+Math.max(8, x(b+1)-x(a))+'px" '+attrs+'></div>';
+  };
+  rows.forEach(r=>{
+    if(r.kind==='proj'){
+      const p = r.p;
+      if(!p){ html += '<div class="grow proj"><div class="glabel" style="cursor:default"><span class="toggle"></span><span class="nm">(プロジェクトに入っていない小業務)</span></div><div class="gtime" style="width:'+W+'px"></div></div>'; return; }
+      const sp = projectSpan(p.id), done = projectDone(p.id);
+      const n = projectTasks(p.id).length;
+      html += '<div class="grow proj"><div class="glabel" data-proj="'+esc(p.id)+'">'
+        + '<span class="toggle" data-toggle="'+esc(p.id)+'" title="開く/閉じる">'+(collapsed.has(p.id)?'▶':'▼')+'</span>'
+        + '<span class="nm">'+esc(p.name||'(名前なし)')+(collapsed.has(p.id)&&n ? '('+n+'件)' : '')+'</span>'
+        + (p.caution ? '<span class="caution" title="注意点があります">⚠</span>' : '')
+        + '<span class="who">'+esc(namesOf(p.owners))+'</span></div>'
+        + '<div class="gtime" style="width:'+W+'px">'+bar(sp, 'pbar'+(done?' done':''), 'data-proj="'+esc(p.id)+'" title="'+esc(p.name)+'"')+'</div></div>';
+    } else {
+      const t = r.t, od = isOverdue(t), sp = taskSpan(t);
+      const cls = 'bar '+STATUS_CLASS[t.status]+(od?' overdue':'');
+      const tip = esc(t.name+'\n'+(t.start?fmtMDW(t.start)+' 〜 ':'期限 ')+fmtMDW(t.due)+'\n'+t.status+(od?'(期限切れ)':'')+'\n'+namesOf(t.assignees));
+      let note = '';
+      if(sp && sp.b>=start && sp.a<=end){
+        const endX = Math.max(x(Math.max(sp.a,start))+8, x(Math.min(sp.b,end)+1));
+        note = '<div class="bar-note'+(od?' overdue':'')+'" style="left:'+(endX+6)+'px">'+esc(namesOf(t.assignees))+(od?' 期限切れ':'')+'</div>';
+      }
+      html += '<div class="grow task"><div class="glabel" data-task="'+esc(t.id)+'" title="'+tip+'">'
+        + '<span class="nm">'+esc(t.name||'(名前なし)')+'</span>'
+        + (t.caution ? '<span class="caution" title="注意点があります">⚠</span>' : '')
+        + (od ? '<span class="od-mark">期限切れ</span>' : '<span class="st-mark '+STATUS_CLASS[t.status]+'">'+t.status+'</span>')
+        + '<span class="who">'+esc(namesOf(t.assignees))+'</span></div>'
+        + '<div class="gtime" style="width:'+W+'px">'+bar(sp, cls, 'data-task="'+esc(t.id)+'" title="'+tip+'"')+note+'</div></div>';
+    }
+  });
+  if(rows.length===0){
+    html += '<div class="empty-msg">'+(state.tasks.length||state.projects.length ? '条件に合う仕事がありません。' : 'まだ仕事が入っていません。'+(editing ? '「＋ プロジェクトを追加」から入力してください。' : '「編集する」を押してから入力してください。'))+'</div>';
+  }
+  const hh = view.scale==='day' ? 67 : view.scale==='week' ? 53 : 27;
+  html += '<div class="gbg" style="left:var(--label-w);width:'+W+'px;top:'+hh+'px">'+lines+'</div>';
+  box.style.width = 'calc(var(--label-w) + '+W+'px)';
+  box.innerHTML = html;
+}
+// 今日の位置が見えるように横に動かす(開いたときと、目盛りを変えたとき)
+function scrollGanttToToday(){
+  if(!state) return;
+  const {start,end} = fyRange(), tn = dayNum(todayYmd());
+  if(tn<start || tn>end){ $('gwrap').scrollLeft = 0; return; }
+  const ppd = CONFIG.pxPerDay[view.scale];
+  const back = view.scale==='day' ? 7 : view.scale==='week' ? 21 : 45; // 今日より少し前から見せる
+  $('gwrap').scrollLeft = Math.max(0, (tn-start-back)*ppd);
+}
+$('gantt').addEventListener('click', e=>{
+  const tg = e.target.closest('[data-toggle]');
+  if(tg){ const id = tg.dataset.toggle; collapsed.has(id) ? collapsed.delete(id) : collapsed.add(id); savePref(); renderGantt(); return; }
+  const tk = e.target.closest('[data-task]');
+  if(tk){ openTaskModal(tk.dataset.task); return; }
+  const pj = e.target.closest('[data-proj]');
+  if(pj){ openProjectModal(pj.dataset.proj); }
+});
+document.querySelectorAll('#scaleSeg button').forEach(b=> b.addEventListener('click', ()=>{ view.scale = b.dataset.scale; savePref(); renderFilters(); renderGantt(); scrollGanttToToday(); }));
+$('gFilter').addEventListener('change', e=>{ view.gFilter = e.target.value; savePref(); renderGantt(); });
+$('gHideDone').addEventListener('change', e=>{ view.gHideDone = e.target.checked; savePref(); renderGantt(); });
+$('gExpandAll').addEventListener('click', ()=>{ collapsed.clear(); savePref(); renderGantt(); });
+$('gCollapseAll').addEventListener('click', ()=>{ state.projects.forEach(p=>collapsed.add(p.id)); savePref(); renderGantt(); });
+
+//////////////////////// 仕事の一覧 ////////////////////////
+const LIST_COLS = [
+  { key:'project',  label:'プロジェクト', get:t=>{ const p = state.projects.find(p=>p.id===t.projectId); return p ? p.name : ''; } },
+  { key:'name',     label:'小業務',       get:t=>t.name },
+  { key:'assignees',label:'担当',         get:t=>namesOf(t.assignees) },
+  { key:'start',    label:'始まり',       get:t=>t.start },
+  { key:'due',      label:'期限',         get:t=>t.due },
+  { key:'status',   label:'進み具合',     get:t=>CONFIG.statuses.indexOf(t.status) },
+  { key:'workload', label:'仕事量',       get:t=>t.workload },
+  { key:'repeat',   label:'毎年',         get:t=>t.repeatYearly?0:1 },
+  { key:'memo',     label:'メモ・注意点', get:t=>(t.caution?'0':'1')+t.memo },
+];
+function compareTasks(a, b){
+  const col = LIST_COLS.find(c=>c.key===view.sortKey) || LIST_COLS[3];
+  const va = col.get(a), vb = col.get(b);
+  // 空のもの(日付なし・担当なし等)は、並べ替えの向きに関係なく最後に置く
+  const ea = va==='' || va==null, eb = vb==='' || vb==null;
+  if(ea!==eb) return ea ? 1 : -1;
+  let c = (typeof va==='number' && typeof vb==='number') ? va-vb : String(va).localeCompare(String(vb), 'ja');
+  if(c===0) c = taskDateKey(a).localeCompare(taskDateKey(b));
+  return c * (col.key===view.sortKey ? view.sortDir : 1);
+}
+function renderList(){
+  const cols = view.lGroup ? LIST_COLS.filter(c=>c.key!=='project') : LIST_COLS;
+  const match = t => (!view.lFilter || t.assignees.includes(view.lFilter)) && !(view.lHideDone && t.status==='完了');
+  let html = '<thead><tr>' + cols.map(c=>'<th data-sort="'+c.key+'">'+c.label+(c.key===view.sortKey ? ' <span class="arrow">'+(view.sortDir>0?'▲':'▼')+'</span>' : '')+'</th>').join('') + '</tr></thead><tbody>';
+  const taskRow = t => {
+    const od = isOverdue(t);
+    const cells = cols.map(c=>{
+      switch(c.key){
+        case 'project': { const p = state.projects.find(p=>p.id===t.projectId); return '<td>'+esc(p?p.name:'')+'</td>'; }
+        case 'name': return '<td>'+esc(t.name)+'</td>';
+        case 'assignees': return '<td>'+esc(namesOf(t.assignees))+'</td>';
+        case 'start': return '<td class="nowrap">'+fmtMDW(t.start)+'</td>';
+        case 'due': return '<td class="nowrap">'+fmtMDW(t.due)+(od?' <span class="od-mark">期限切れ</span>':'')+'</td>';
+        case 'status': return '<td class="nowrap">'+(editing
+            ? '<select data-status="'+esc(t.id)+'">'+CONFIG.statuses.map(s=>'<option'+(s===t.status?' selected':'')+'>'+s+'</option>').join('')+'</select>'
+            : t.status)+'</td>';
+        case 'workload': return '<td class="nowrap">'+esc(levelLabel(t.workload))+'</td>';
+        case 'repeat': return '<td>'+(t.repeatYearly?'○':'')+'</td>';
+        case 'memo': return '<td class="memo">'+(t.caution?'<span class="caution">⚠ '+esc(t.caution)+'</span>\n':'')+esc(t.memo)+'</td>';
+      }
+    }).join('');
+    return '<tr class="task-row'+(t.status==='完了'?' done-row':'')+'" data-task="'+esc(t.id)+'">'+cells+'</tr>';
+  };
+  let count = 0;
+  if(view.lGroup){
+    const groups = sortedProjects().map(p=>({p, tasks:projectTasks(p.id)}));
+    const loose = state.tasks.filter(t=>!t.projectId);
+    if(loose.length) groups.push({p:null, tasks:loose});
+    groups.forEach(({p,tasks})=>{
+      const shown = tasks.filter(match).sort(compareTasks);
+      if(p){
+        if(view.lFilter && !p.owners.includes(view.lFilter) && shown.length===0) return;
+        if(view.lHideDone && projectDone(p.id)) return;
+      } else if(shown.length===0) return;
+      const sp = p ? projectSpan(p.id) : null;
+      const doneN = tasks.filter(t=>t.status==='完了').length;
+      html += '<tr class="proj-row"><td colspan="'+cols.length+'">'
+        + esc(p ? (p.name||'(名前なし)') : '(プロジェクトに入っていない小業務)')
+        + (p && p.caution ? ' <span class="caution">⚠</span>' : '')
+        + (p ? '　<span class="hint">'+(p.owners.length?'主担当：'+esc(namesOf(p.owners))+'　':'')+(sp?fmtMD(numToYmd(sp.a))+'〜'+fmtMD(numToYmd(sp.b))+'　':'')+'完了 '+doneN+'/'+tasks.length+'</span>' : '')
+        + (p ? '<span class="pbtns"><button data-editproj="'+esc(p.id)+'">'+(editing?'直す':'内容を見る')+'</button>'+(editing?'<button data-addtask="'+esc(p.id)+'">＋ 小業務</button>':'')+'</span>' : '')
+        + '</td></tr>';
+      shown.forEach(t=>{ html += taskRow(t); count++; });
+    });
+  } else {
+    state.tasks.filter(match).sort(compareTasks).forEach(t=>{ html += taskRow(t); count++; });
+  }
+  if(count===0 && !(view.lGroup && state.projects.length)) html += '<tr><td colspan="'+cols.length+'" class="empty-msg">'+(state.tasks.length ? '条件に合う仕事がありません。' : 'まだ仕事が入っていません。')+'</td></tr>';
+  html += '</tbody>';
+  $('listTable').innerHTML = html;
+}
+$('listTable').addEventListener('click', e=>{
+  if(e.target.closest('select')) return;
+  const th = e.target.closest('th[data-sort]');
+  if(th){ const k = th.dataset.sort; if(view.sortKey===k) view.sortDir *= -1; else { view.sortKey = k; view.sortDir = 1; } savePref(); renderList(); return; }
+  const ep = e.target.closest('[data-editproj]'); if(ep){ openProjectModal(ep.dataset.editproj); return; }
+  const at = e.target.closest('[data-addtask]'); if(at){ openTaskModal(null, at.dataset.addtask); return; }
+  const tr = e.target.closest('tr[data-task]'); if(tr) openTaskModal(tr.dataset.task);
+});
+// 一覧で進み具合だけすぐ変えられるようにする(よく使う操作なので、入力画面を開かなくてよいように)
+$('listTable').addEventListener('change', e=>{
+  const sel = e.target.closest('select[data-status]');
+  if(!sel || !editing) return;
+  const t = state.tasks.find(t=>t.id===sel.dataset.status);
+  if(t){ t.status = sel.value; markDirty(); renderList(); }
+});
+$('lGroup').addEventListener('change', e=>{ view.lGroup = e.target.checked; if(view.lGroup && view.sortKey==='project') view.sortKey='start'; savePref(); renderList(); });
+$('lHideDone').addEventListener('change', e=>{ view.lHideDone = e.target.checked; savePref(); renderList(); });
+$('lFilter').addEventListener('change', e=>{ view.lFilter = e.target.value; savePref(); renderList(); });
+
+//////////////////////// 小業務の入力画面 ////////////////////////
+let editingTaskId = null;
+function choiceHtml(type, name, items, selected){
+  return items.map(it=>'<label><input type="'+type+'" name="'+name+'" value="'+esc(it.value)+'"'+(selected(it.value)?' checked':'')+(editing?'':' disabled')+'> '+esc(it.label)+'</label>').join('');
+}
+function openTaskModal(id, presetProjectId){
+  const t = id ? state.tasks.find(x=>x.id===id) : null;
+  if(id && !t) return;
+  if(!t && !editing) return;
+  editingTaskId = id;
+  $('taskTitle').textContent = t ? '小業務' : '小業務を追加';
+  $('taskRO').hidden = editing;
+  $('tProject').innerHTML = '<option value="">(プロジェクトに入れない)</option>' + sortedProjects().map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name||'(名前なし)')+'</option>').join('');
+  $('tProject').value = t ? t.projectId : (presetProjectId || '');
+  $('tName').value = t ? t.name : '';
+  $('tStart').value = t ? t.start : '';
+  $('tDue').value = t ? t.due : '';
+  $('tMemo').value = t ? t.memo : '';
+  $('tCaution').value = t ? t.caution : '';
+  $('tRepeat').checked = t ? t.repeatYearly : true;
+  const asg = t ? t.assignees : [];
+  $('tAssignees').innerHTML = state.meta.members.length
+    ? choiceHtml('checkbox', 'tAsg', state.meta.members.map(m=>({value:m.id, label:m.name})), v=>asg.includes(v))
+    : '<span class="hint">メンバーがまだいません。「設定」タブで追加してください。</span>';
+  $('tStatus').innerHTML = choiceHtml('radio', 'tSt', CONFIG.statuses.map(s=>({value:s,label:s})), v=>v===(t?t.status:'未着手'));
+  $('tWorkload').innerHTML = choiceHtml('radio', 'tWl', state.meta.workloadLevels.map(l=>({value:l.value,label:l.label})), v=>Number(v)===(t?t.workload:2));
+  ['tProject','tName','tStart','tDue','tMemo','tCaution','tRepeat'].forEach(k=> $(k).disabled = !editing);
+  $('tDelete').hidden = !editing || !t;
+  $('taskErr').textContent = '';
+  $('taskOverlay').classList.add('show');
+  if(editing) setTimeout(()=>$('tName').focus(), 30);
+}
+function closeOverlay(id){ $(id).classList.remove('show'); }
+$('tCancel').addEventListener('click', ()=>closeOverlay('taskOverlay'));
+$('tOk').addEventListener('click', ()=>{
+  if(!editing) return;
+  const name = $('tName').value.trim();
+  const start = $('tStart').value, due = $('tDue').value;
+  if(!name){ $('taskErr').textContent = '小業務の名前を入れてください。'; return; }
+  if(!start && !due){ $('taskErr').textContent = '期間(始まりか期限の少なくとも一方)を入れてください。ガントチャートに表示するために使います。'; return; }
+  if(start && due && start > due){ $('taskErr').textContent = '始まりの日が、期限より後になっています。日付を確かめてください。'; return; }
+  let t = editingTaskId ? state.tasks.find(x=>x.id===editingTaskId) : null;
+  if(!t){ t = { id:newId('t'), order: state.tasks.length }; state.tasks.push(t); }
+  Object.assign(t, {
+    projectId: $('tProject').value, name, start, due,
+    assignees: [...document.querySelectorAll('input[name=tAsg]:checked')].map(i=>i.value),
+    status: (document.querySelector('input[name=tSt]:checked')||{}).value || '未着手',
+    workload: Number((document.querySelector('input[name=tWl]:checked')||{}).value) || 2,
+    memo: $('tMemo').value, caution: $('tCaution').value.trim(), repeatYearly: $('tRepeat').checked,
+  });
+  if(t.projectId) collapsed.delete(t.projectId);
+  closeOverlay('taskOverlay');
+  markDirty(); renderAll();
+});
+$('tDelete').addEventListener('click', ()=>{
+  const t = state.tasks.find(x=>x.id===editingTaskId);
+  if(!t || !editing) return;
+  if(!confirm('小業務「'+t.name+'」を削除します。元に戻せません。よろしいですか？')) return;
+  state.tasks = state.tasks.filter(x=>x.id!==t.id);
+  closeOverlay('taskOverlay');
+  markDirty(); renderAll();
+});
+
+//////////////////////// プロジェクトの入力画面 ////////////////////////
+let editingProjId = null;
+function openProjectModal(id){
+  const p = id ? state.projects.find(x=>x.id===id) : null;
+  if(id && !p) return;
+  if(!p && !editing) return;
+  editingProjId = id;
+  $('projTitle').textContent = p ? 'プロジェクト' : 'プロジェクトを追加';
+  $('projRO').hidden = editing;
+  $('pName').value = p ? p.name : '';
+  $('pMemo').value = p ? p.memo : '';
+  $('pCaution').value = p ? p.caution : '';
+  $('pRepeat').checked = p ? p.repeatYearly : true;
+  const own = p ? p.owners : [];
+  $('pOwners').innerHTML = state.meta.members.length
+    ? choiceHtml('checkbox', 'pOwn', state.meta.members.map(m=>({value:m.id, label:m.name})), v=>own.includes(v))
+    : '<span class="hint">メンバーがまだいません。「設定」タブで追加してください。</span>';
+  ['pName','pMemo','pCaution','pRepeat'].forEach(k=> $(k).disabled = !editing);
+  const sp = p ? projectSpan(p.id) : null;
+  $('pPeriod').textContent = p ? '小業務 '+projectTasks(p.id).length+'件'+(sp ? '　期間 '+fmtMDW(numToYmd(sp.a))+' 〜 '+fmtMDW(numToYmd(sp.b))+'(小業務の期間から自動で決まります)' : '') : '期間は、あとで追加する小業務の期間から自動で決まります。';
+  $('pDelete').hidden = !editing || !p;
+  $('pUp').parentElement.parentElement.hidden = !editing || !p;
+  $('projErr').textContent = '';
+  $('projOverlay').classList.add('show');
+  if(editing) setTimeout(()=>$('pName').focus(), 30);
+}
+$('pCancel').addEventListener('click', ()=>closeOverlay('projOverlay'));
+$('pOk').addEventListener('click', ()=>{
+  if(!editing) return;
+  const name = $('pName').value.trim();
+  if(!name){ $('projErr').textContent = 'プロジェクトの名前を入れてください。'; return; }
+  let p = editingProjId ? state.projects.find(x=>x.id===editingProjId) : null;
+  if(!p){ p = { id:newId('p'), order: Math.max(-1, ...state.projects.map(x=>x.order))+1 }; state.projects.push(p); }
+  Object.assign(p, { name, memo:$('pMemo').value, caution:$('pCaution').value.trim(), repeatYearly:$('pRepeat').checked,
+    owners: [...document.querySelectorAll('input[name=pOwn]:checked')].map(i=>i.value) });
+  closeOverlay('projOverlay');
+  markDirty(); renderAll();
+});
+function moveProject(dir){
+  const list = sortedProjects();
+  const i = list.findIndex(p=>p.id===editingProjId), j = i+dir;
+  if(i<0 || j<0 || j>=list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  list.forEach((p,k)=> p.order = k);
+  markDirty(); renderAll();
+}
+$('pUp').addEventListener('click', ()=>moveProject(-1));
+$('pDown').addEventListener('click', ()=>moveProject(1));
+$('pDelete').addEventListener('click', ()=>{
+  const p = state.projects.find(x=>x.id===editingProjId);
+  if(!p || !editing) return;
+  const n = projectTasks(p.id).length;
+  if(!confirm('プロジェクト「'+p.name+'」'+(n ? 'と、その中の小業務 '+n+'件' : '')+'を削除します。元に戻せません。よろしいですか？')) return;
+  state.projects = state.projects.filter(x=>x.id!==p.id);
+  state.tasks = state.tasks.filter(t=>t.projectId!==p.id);
+  closeOverlay('projOverlay');
+  markDirty(); renderAll();
+});
+$('gAddProject').addEventListener('click', ()=>openProjectModal(null));
+$('lAddProject').addEventListener('click', ()=>openProjectModal(null));
+$('gAddTask').addEventListener('click', ()=>openTaskModal(null));
+$('lAddTask').addEventListener('click', ()=>openTaskModal(null));
+
+//////////////////////// 設定 ////////////////////////
+function renderSettings(){
+  const ro = !editing;
+  $('setReadonlyNote').hidden = editing;
+  $('setScopeType').innerHTML = CONFIG.scopeTypes.map(s=>'<label><input type="radio" name="scopeType" value="'+s+'"'+(s===state.meta.scopeType?' checked':'')+(ro?' disabled':'')+'> '+s+'</label>').join('　');
+  $('setScopeName').value = state.meta.scopeName; $('setScopeName').disabled = ro;
+  $('setYear').value = state.meta.fiscalYear; $('setYear').disabled = ro;
+  $('memberList').innerHTML = state.meta.members.map(m=>'<div class="m"><input type="text" data-mem="'+esc(m.id)+'" value="'+esc(m.name)+'" style="width:200px"'+(ro?' disabled':'')+'>'+(ro?'':'<button data-delmem="'+esc(m.id)+'">削除</button>')+'</div>').join('') || '<span class="hint">まだいません。</span>';
+  $('newMember').disabled = ro; $('btnAddMember').disabled = ro;
+  $('levelList').innerHTML = state.meta.workloadLevels.map((l,i)=>'<div class="row"><span class="k">'+l.value+'</span><input type="text" data-level="'+i+'" value="'+esc(l.label)+'" style="width:160px"'+(ro?' disabled':'')+'></div>').join('');
+  $('setMeetingDay').innerHTML = CONFIG.weekdays.map((w,i)=>'<option value="'+i+'"'+(i===state.meta.meetingWeekday?' selected':'')+'>'+w+'曜日</option>').join('');
+  $('setMeetingDay').disabled = ro;
+  $('pwState').textContent = state.meta.editPasswordHash ? 'パスワードあり' : 'パスワードなし';
+  $('newPw').disabled = ro; $('btnSetPw').disabled = ro;
+  $('btnImport').disabled = ro || isSample;
+  $('btnExport').disabled = isSample;
+}
+$('setScopeType').addEventListener('change', e=>{ if(!editing) return; state.meta.scopeType = e.target.value; markDirty(); });
+$('setScopeName').addEventListener('change', e=>{ if(!editing) return; state.meta.scopeName = e.target.value.trim(); markDirty(); renderTop(); });
+$('setYear').addEventListener('change', e=>{
+  if(!editing) return;
+  const y = Number(e.target.value);
+  if(!(y>=2000 && y<=2100)){ alert('年度は西暦の数字(例：2026)で入れてください。'); e.target.value = state.meta.fiscalYear; return; }
+  state.meta.fiscalYear = y; markDirty(); renderTop();
+});
+$('memberList').addEventListener('change', e=>{
+  const inp = e.target.closest('[data-mem]'); if(!inp || !editing) return;
+  const m = state.meta.members.find(x=>x.id===inp.dataset.mem);
+  const name = inp.value.trim();
+  if(!name){ alert('名前が空です。消すときは「削除」を押してください。'); inp.value = m.name; return; }
+  m.name = name; markDirty(); renderTop();
+});
+$('memberList').addEventListener('click', e=>{
+  const b = e.target.closest('[data-delmem]'); if(!b || !editing) return;
+  const id = b.dataset.delmem, m = state.meta.members.find(x=>x.id===id);
+  const n = state.tasks.filter(t=>t.assignees.includes(id)).length;
+  if(!confirm('メンバー「'+m.name+'」を削除します。'+(n ? '\n担当している小業務 '+n+'件から、この名前が外れます。' : '')+'\nよろしいですか？')) return;
+  state.meta.members = state.meta.members.filter(x=>x.id!==id);
+  state.tasks.forEach(t=> t.assignees = t.assignees.filter(a=>a!==id));
+  state.projects.forEach(p=> p.owners = p.owners.filter(a=>a!==id));
+  markDirty(); renderAll();
+});
+function addMember(){
+  if(!editing) return;
+  const name = $('newMember').value.trim();
+  if(!name) return;
+  if(state.meta.members.some(m=>m.name===name)){ alert('「'+name+'」はもういます。同じ名字の先生がいるときは、下の名前も入れて区別してください。'); return; }
+  state.meta.members.push({ id:newId('m'), name });
+  $('newMember').value = '';
+  markDirty(); renderAll();
+  $('newMember').focus();
+}
+$('btnAddMember').addEventListener('click', addMember);
+$('newMember').addEventListener('keydown', e=>{ if(e.key==='Enter') addMember(); });
+$('levelList').addEventListener('change', e=>{
+  const inp = e.target.closest('[data-level]'); if(!inp || !editing) return;
+  const l = state.meta.workloadLevels[Number(inp.dataset.level)];
+  if(inp.value.trim()) l.label = inp.value.trim(); else inp.value = l.label;
+  markDirty();
+});
+$('setMeetingDay').addEventListener('change', e=>{ if(!editing) return; state.meta.meetingWeekday = Number(e.target.value); markDirty(); });
+async function sha256Hex(text){
+  if(!(window.crypto && crypto.subtle)) throw new Error('このブラウザではパスワードを使えません。Chrome か Edge で開いてください。');
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+$('btnSetPw').addEventListener('click', async ()=>{
+  if(!editing) return;
+  const pw = $('newPw').value;
+  if(!pw){
+    if(!confirm('パスワードをなくします。だれでも「編集する」を押せるようになります。よろしいですか？')) return;
+    state.meta.editPasswordHash = '';
+  } else {
+    try{ state.meta.editPasswordHash = await sha256Hex(pw); }catch(e){ alert(e.message); return; }
+    alert('パスワードを設定しました。忘れないように控えておいてください。');
+  }
+  $('newPw').value = '';
+  markDirty(); renderSettings();
+});
+
+//////////////////////// バックアップと復元 ////////////////////////
+function stateToText(o){ return JSON.stringify(o, null, 2); }
+function downloadText(text, name){
+  const url = URL.createObjectURL(new Blob([text], {type:'application/json'}));
+  const a = document.createElement('a'); a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+$('btnExport').addEventListener('click', ()=>{
+  if(!state || isSample) return;
+  downloadText(stateToText(state), '仕事管理_バックアップ_'+(state.meta.scopeName||'')+'_'+todayYmd()+'.json');
+});
+$('btnImport').addEventListener('click', ()=>{
+  if(!editing || isSample) return;
+  pickFileText(async (text, name)=>{
+    let o;
+    try{ o = normalizeState(JSON.parse(text)); }catch(e){ alert('読み込めませんでした。\n'+e.message+'\n\n「データを書き出す(バックアップ)」で作ったファイルを選んでください。'); return; }
+    if(!confirm('「'+name+'」の内容で、今のデータを置き換えます。今のデータは消えます。よろしいですか？\n(不安なときは、先に「データを書き出す(バックアップ)」で今の状態を控えてください)')) return;
+    o.editLock = state.editLock; // 編集中の印は今のものを引き継ぐ
+    state = o;
+    markDirty(); renderAll();
+    alert('復元しました。');
+  });
+});
+// Chrome/Edge 以外でも読み込みだけはできるように、input type=file で読む
+function pickFileText(cb){
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.onchange = async ()=>{ const f = inp.files[0]; if(f) cb(await f.text(), f.name); };
+  inp.click();
+}
+
+//////////////////////// ファイルの読み書き ////////////////////////
+// 前回開いたファイルを覚えておき、次に起動したときすぐ開けるようにする(IndexedDB にファイルの場所だけを保存する)。
+function idb(){ return new Promise((res,rej)=>{ const r = indexedDB.open('work-planner', 1); r.onupgradeneeded = ()=>r.result.createObjectStore('kv'); r.onsuccess = ()=>res(r.result); r.onerror = ()=>rej(r.error); }); }
+async function idbSet(k,v){ const db = await idb(); return new Promise((res,rej)=>{ const tx = db.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete = res; tx.onerror = ()=>rej(tx.error); }); }
+async function idbGet(k){ const db = await idb(); return new Promise((res,rej)=>{ const r = db.transaction('kv').objectStore('kv').get(k); r.onsuccess = ()=>res(r.result); r.onerror = ()=>rej(r.error); }); }
+
+const lockStaleMs = () => CONFIG.lockStaleMinutes*60*1000;
+function isLockFresh(lock){
+  if(!lock || !lock.active || !lock.since) return false;
+  const t = new Date(lock.since).getTime();
+  return Number.isFinite(t) && Date.now()-t < lockStaleMs();
+}
+async function readHandle(handle){
+  const f = await handle.getFile();
+  return { obj: normalizeState(JSON.parse(await f.text())), modified: f.lastModified };
+}
+async function openHandle(handle){
+  const { obj, modified } = await readHandle(handle);
+  state = obj; fileHandle = handle; isSample = false; editing = false; dirty = false;
+  lastKnownModified = modified;
+  try{ await idbSet('lastFile', handle); }catch(e){}
+  setStatus('');
+  renderAll(); scrollGanttToToday();
+}
+async function doOpen(){
+  if(!(await confirmDiscard())) return;
+  if(editing) await stopEditing();
+  if(!supportsFSA){ alert('このブラウザでは、データファイルを開いて保存することができません。Chrome か Edge で開いてください。'); return; }
+  try{
+    const startIn = await idbGet('lastFile').catch(()=>undefined);
+    const [h] = await window.showOpenFilePicker({ types:[{ description:'仕事管理のデータ', accept:{'application/json':['.json']} }], ...(startIn?{startIn}:{}) });
+    await openHandle(h);
+  }catch(e){ if(e.name!=='AbortError') alert('開けませんでした。\n'+e.message+'\n\n仕事管理のデータファイル(.json)を選んでいるか確かめてください。'); }
+}
+// ほかの人が保存したかもしれない内容を、書き込む前に確かめる
+async function writeFile(opts){
+  if(!fileHandle || isSample) return;
+  const f = await fileHandle.getFile();
+  if(lastKnownModified && f.lastModified !== lastKnownModified && !(opts && opts.force)){
+    let other = null;
+    try{ other = JSON.parse(await f.text()); }catch(e){}
+    const by = other && other.meta && other.meta.savedBy;
+    if(!confirm('このファイルは、あなたが開いたあとに'+(by ? sensei(by)+'が' : 'ほかの場所で')+'保存しています。\nこのまま保存すると、そちらの変更は消えてしまいます。\n\n保存しますか？(「キャンセル」を押すと保存しません。その場合は、入力した内容を紙などに控えてから、ページを開き直して入力し直してください)')){
+      clearTimeout(autosaveTimer);
+      setStatus('保存を中止しました(ほかの人の変更があるため)', 'dirty');
+      return false;
+    }
+  }
+  state.meta.savedAt = new Date().toISOString();
+  state.meta.savedBy = editorName();
+  const w = await fileHandle.createWritable();
+  await w.write(stateToText(state));
+  await w.close();
+  lastKnownModified = (await fileHandle.getFile()).lastModified;
+  dirty = false;
+  const t = new Date();
+  setStatus('保存しました('+t.getHours()+':'+pad2(t.getMinutes())+')', 'saved');
+  return true;
+}
+async function doSaveAs(){
+  if(!supportsFSA){ downloadText(stateToText(state), suggestedFileName()); dirty = false; return true; }
+  try{
+    const startIn = await idbGet('lastFile').catch(()=>undefined);
+    const h = await window.showSaveFilePicker({ suggestedName: suggestedFileName(), types:[{ description:'仕事管理のデータ', accept:{'application/json':['.json']} }], ...(startIn?{startIn}:{}) });
+    fileHandle = h; lastKnownModified = 0;
+    try{ await idbSet('lastFile', h); }catch(e){}
+    await writeFile({force:true});
+    renderTop();
+    return true;
+  }catch(e){ if(e.name!=='AbortError') alert('保存できませんでした。\n'+e.message); return false; }
+}
+function suggestedFileName(){ return '仕事管理_'+(state.meta.scopeName||'')+'_'+state.meta.fiscalYear+'.json'; }
+async function doSave(){
+  if(!editing || isSample) return;
+  clearTimeout(autosaveTimer);
+  try{ if(fileHandle) await writeFile(); else await doSaveAs(); }
+  catch(e){ setStatus('保存できませんでした', 'dirty'); alert('保存できませんでした。\n'+e.message+'\n\n共有サーバーにつながっているか確かめてから、もう一度「保存」を押してください。'); }
+}
+let autosaveTimer = null;
+function markDirty(){
+  if(!editing) return;
+  dirty = true;
+  if(isSample){ setStatus('見本のため保存されません', 'dirty'); return; }
+  setStatus(fileHandle ? '保存待ち…' : '未保存(「保存」を押して保存先を決めてください)', 'dirty');
+  try{ localStorage.setItem('wp.draft', stateToText(state)); }catch(e){} // 念のためブラウザにも控えを残す
+  if(!fileHandle) return;
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(async ()=>{
+    try{ await writeFile(); lastLockStamp = Date.now(); }
+    catch(e){ setStatus('自動保存できませんでした。共有サーバーにつながっているか確かめて「保存」を押してください', 'dirty'); }
+  }, CONFIG.autosaveDelayMs);
+}
+async function confirmDiscard(){
+  if(!dirty || !editing) return true;
+  if(isSample) return confirm('見本で入力した内容は消えます。よろしいですか？');
+  return confirm('まだ保存していない変更があります。保存せずに進むと、変更は消えます。よろしいですか？');
+}
+function editorName(){ try{ return localStorage.getItem('wp.editorName') || ''; }catch(e){ return ''; } }
+
+//////////////////////// 編集する / 編集を終える ////////////////////////
+function openEditDialog(){
+  $('eName').value = editorName();
+  $('ePw').value = '';
+  $('ePwRow').hidden = !state.meta.editPasswordHash;
+  $('eErr').textContent = '';
+  $('editOverlay').classList.add('show');
+  setTimeout(()=> ($('eName').value ? (state.meta.editPasswordHash ? $('ePw') : $('eOk')) : $('eName')).focus(), 30);
+}
+async function startEditing(){
+  const name = $('eName').value.trim();
+  if(!name){ $('eErr').textContent = 'お名前を入れてください。'; return; }
+  try{ localStorage.setItem('wp.editorName', name); }catch(e){}
+  // ほかの先生が保存した最新の内容から編集を始める(古い画面のまま編集して、相手の変更を消してしまわないように)
+  if(fileHandle && !isSample){
+    try{
+      const { obj, modified } = await readHandle(fileHandle);
+      state = obj; lastKnownModified = modified;
+    }catch(e){ $('eErr').textContent = 'データファイルを読み直せませんでした。共有サーバーにつながっているか確かめてください。('+e.message+')'; return; }
+  }
+  if(state.meta.editPasswordHash){
+    let h; try{ h = await sha256Hex($('ePw').value); }catch(e){ $('eErr').textContent = e.message; return; }
+    if(h !== state.meta.editPasswordHash){ $('eErr').textContent = 'パスワードが違います。'; renderAll(); return; }
+  }
+  if(isLockFresh(state.editLock) && state.editLock.by !== name){
+    if(!confirm('⚠ いま '+sensei(state.editLock.by)+'が編集中です。\n\n同時に編集すると、どちらかの入力が消えてしまいます。\nふつうは、相手が「編集を終える」まで待ってください。\n\nそれでも編集を始めますか？(相手がブラウザを閉じ忘れている場合など)')){ closeOverlay('editOverlay'); renderAll(); return; }
+  }
+  editing = true;
+  state.editLock = { active:true, since:new Date().toISOString(), by:name };
+  closeOverlay('editOverlay');
+  renderAll();
+  if(fileHandle && !isSample){
+    try{ await writeFile({force:true}); lastLockStamp = Date.now(); }
+    catch(e){ setStatus('保存できませんでした', 'dirty'); alert('データファイルに書き込めませんでした。\n'+e.message+'\n\n共有サーバーのフォルダに書き込む権限があるか確かめてください。'); }
+  } else if(!isSample){
+    setStatus('まだ保存していません。「保存」を押して保存先を決めてください', 'dirty');
+  }
+}
+async function stopEditing(){
+  clearTimeout(autosaveTimer);
+  state.editLock = { active:false, since:null, by:'' };
+  if(fileHandle && !isSample){
+    try{ const ok = await writeFile(); if(ok===false) return; }
+    catch(e){ alert('保存できませんでした。\n'+e.message+'\n\n共有サーバーにつながっているか確かめてから、もう一度「編集を終える」を押してください。'); state.editLock = { active:true, since:new Date().toISOString(), by:editorName() }; return; }
+  } else if(!isSample && dirty){
+    if(!confirm('まだ保存していません。保存せずに編集を終えると、入力した内容は消えます。\n(「キャンセル」を押してから「保存」を押してください)\n\n保存せずに終えますか？')) { state.editLock.active = true; return; }
+  }
+  editing = false; dirty = false;
+  renderAll();
+}
+$('btnEdit').addEventListener('click', ()=>{ if(!state) return; editing ? stopEditing() : openEditDialog(); });
+$('eOk').addEventListener('click', startEditing);
+$('eCancel').addEventListener('click', ()=>closeOverlay('editOverlay'));
+['eName','ePw'].forEach(id=> $(id).addEventListener('keydown', e=>{ if(e.key==='Enter') startEditing(); }));
+$('btnSave').addEventListener('click', doSave);
+$('btnOpen').addEventListener('click', doOpen);
+$('bnOpen').addEventListener('click', doOpen);
+$('btnReload').addEventListener('click', async ()=>{
+  if(!fileHandle || editing) return;
+  try{ await openHandle(fileHandle); setStatus('最新の内容を読み込みました', 'saved'); }
+  catch(e){ alert('読み直せませんでした。\n'+e.message); }
+});
+// 編集中は、入力がなくても定期的に「編集中」の印を保存し直す(ほかの先生に編集中だと伝わり続けるように)
+setInterval(async ()=>{
+  if(!editing || !fileHandle || isSample) return;
+  if(Date.now() - lastLockStamp < CONFIG.heartbeatMinutes*60*1000) return;
+  state.editLock.since = new Date().toISOString();
+  try{ if(await writeFile() !== false) lastLockStamp = Date.now(); }catch(e){ setStatus('共有サーバーに書き込めません', 'dirty'); }
+}, 60*1000);
+// 閲覧中は、ほかの先生の「編集中」の表示が古くなったら消えるように、ときどき上の帯を描き直す
+setInterval(()=>{ if(state && !editing) renderTop(); }, 60*1000);
+window.addEventListener('beforeunload', e=>{
+  if(editing && (dirty || !isSample)){ e.preventDefault(); e.returnValue = ''; }
+});
+
+//////////////////////// 新規作成 ////////////////////////
+function openNewDialog(){
+  $('nType').innerHTML = CONFIG.scopeTypes.map((s,i)=>'<label><input type="radio" name="nType" value="'+s+'"'+(i===0?' checked':'')+'> '+s+'</label>').join('');
+  $('nName').value = ''; $('nYear').value = currentFiscalYear(); $('nErr').textContent = '';
+  $('newOverlay').classList.add('show');
+  setTimeout(()=>$('nName').focus(), 30);
+}
+$('btnNew').addEventListener('click', async ()=>{ if(!(await confirmDiscard())) return; openNewDialog(); });
+$('bnNew').addEventListener('click', openNewDialog);
+$('nCancel').addEventListener('click', ()=>closeOverlay('newOverlay'));
+$('nOk').addEventListener('click', async ()=>{
+  const type = (document.querySelector('input[name=nType]:checked')||{}).value || '分掌';
+  const name = $('nName').value.trim(), y = Number($('nYear').value);
+  if(!name){ $('nErr').textContent = '名前(例：教務部、1学年)を入れてください。'; return; }
+  if(!(y>=2000 && y<=2100)){ $('nErr').textContent = '年度は西暦の数字(例：2026)で入れてください。'; return; }
+  if(editing && fileHandle && !isSample) await stopEditing();
+  const prev = { state, fileHandle, isSample, editing, dirty };
+  state = emptyState(type, name, y);
+  fileHandle = null; isSample = false; editing = true; dirty = false;
+  state.editLock = { active:true, since:new Date().toISOString(), by:editorName() };
+  closeOverlay('newOverlay');
+  const ok = await doSaveAs();
+  if(!ok){ ({ state, fileHandle, isSample, editing, dirty } = prev); renderAll(); return; } // 保存先を選ばなかったときは元に戻す
+  lastLockStamp = Date.now();
+  view.tab = 'settings'; savePref();
+  renderAll();
+  alert('作りました。はじめに「設定」の「メンバー」に、担当者の名前を入れてください。');
+});
+
+//////////////////////// 見本 ////////////////////////
+// 架空の名前で、1年分の見本を作る(動作確認と、はじめての人のお試し用)。今日の日付に合わせて進み具合を決める。
+function makeSample(){
+  const fy = currentFiscalYear();
+  const s = emptyState('分掌', '教務部(見本)', fy);
+  const names = ['山田','佐藤','鈴木','高橋','伊藤'];
+  s.meta.members = names.map((n,i)=>({ id:'m'+i, name:n }));
+  const d = (m, day) => (m>=4 ? fy : fy+1)+'-'+pad2(m)+'-'+pad2(day);
+  const today = todayYmd();
+  const auto = (start, due) => due < today ? '完了' : start <= today ? '作業中' : '未着手';
+  const data = [
+    ['年度始めの準備', [0], '', [
+      ['年間行事予定の配布', [0], d(4,1), d(4,6), 2, ''],
+      ['時間割の作成', [1], d(4,1), d(4,8), 3, '非常勤の先生の曜日を先に確認する'],
+      ['教育課程の届け出', [0,2], d(4,6), d(4,24), 2, ''],
+    ]],
+    ['入学式', [2], '体育館の暗幕は前日までに点検', [
+      ['式次第の作成', [2], d(4,1), d(4,3), 1, ''],
+      ['会場の準備', [3,4], d(4,6), d(4,7), 2, ''],
+    ]],
+    ['学校公開', [3], '', [
+      ['保護者への案内文', [3], d(5,7), d(5,20), 1, ''],
+      ['当日の運営', [3,1], d(6,13), d(6,13), 3, '駐車場の係を早めに決める'],
+    ]],
+    ['通知表', [1], '', [
+      ['1学期の通知表', [1], d(7,1), d(7,17), 3, ''],
+      ['2学期の通知表', [1], d(12,1), d(12,22), 3, ''],
+      ['3学期の通知表', [1], d(3,1), d(3,19), 3, ''],
+    ]],
+    ['学校評価', [4], '', [
+      ['アンケートの作成', [4], d(8,25), d(9,5), 1, ''],
+      ['アンケートの集計', [4,0], d(9,8), d(9,25), 2, ''],
+      ['結果のまとめと報告', [4], d(10,5), d(10,30), 2, ''],
+    ]],
+    ['次年度の教育課程', [0], '行事の精選について、校長の方針を先に聞く', [
+      ['授業時数の計画', [0,1], d(10,1), d(11,13), 2, ''],
+      ['年間行事予定の案', [0], d(11,2), d(12,18), 3, ''],
+      ['教育課程の届け出の準備', [0,2], d(1,12), d(2,26), 2, ''],
+    ]],
+  ];
+  data.forEach(([pn, owners, caution, tasks], pi)=>{
+    const pid = 'p'+pi;
+    s.projects.push({ id:pid, name:pn, owners:owners.map(i=>'m'+i), memo:'', caution, repeatYearly:true, order:pi });
+    tasks.forEach(([tn, asg, a, b, wl, cau], ti)=>{
+      let st = auto(a, b);
+      if(tn==='アンケートの集計' && st==='完了') st = '作業中'; // 期限切れの例
+      s.tasks.push({ id:'t'+pi+'_'+ti, projectId:pid, name:tn, assignees:asg.map(i=>'m'+i), start:a, due:b, status:st, workload:wl, memo:'', caution:cau, repeatYearly:true, order:ti });
+    });
+  });
+  s.tasks.push({ id:'tx', projectId:'', name:'教務だよりの発行(月1回)', assignees:['m2'], start:d(4,1), due:d(3,20), status:'作業中', workload:1, memo:'毎月20日ごろ発行', caution:'', repeatYearly:true, order:99 });
+  return s;
+}
+$('bnSample').addEventListener('click', ()=>{
+  state = makeSample(); fileHandle = null; isSample = true; editing = false; dirty = false;
+  renderAll(); scrollGanttToToday();
+  setStatus('見本を表示しています(「編集する」で入力も試せます。保存はされません)', 'saved');
+});
+
+//////////////////////// タブ ////////////////////////
+document.querySelectorAll('nav.tabs button').forEach(b=> b.addEventListener('click', ()=>{
+  if(!state) return;
+  view.tab = b.dataset.tab; savePref(); renderAll();
+  if(view.tab==='gantt') scrollGanttToToday();
+}));
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape') document.querySelectorAll('.overlay.show').forEach(o=>o.classList.remove('show'));
+  if((e.ctrlKey||e.metaKey) && e.key==='s'){ e.preventDefault(); doSave(); }
+});
+
+//////////////////////// 起動 ////////////////////////
+async function boot(){
+  renderAll();
+  if(!supportsFSA){
+    $('bnLast').hidden = false;
+    $('bnLast').innerHTML = '<b style="color:var(--warn)">このブラウザでは、データファイルへの保存ができません。Chrome か Edge で開いてください。</b>';
+    return;
+  }
+  // 前回のファイルがあれば、すぐ開けるようにする(ブラウザの決まりで、起動のたびに1回だけ許可のボタンが要る)
+  let h; try{ h = await idbGet('lastFile'); }catch(e){}
+  if(!h) return;
+  try{
+    if(await h.queryPermission({mode:'readwrite'}) === 'granted'){ await openHandle(h); return; }
+  }catch(e){}
+  $('bnLast').hidden = false;
+  $('bnLast').innerHTML = '前回のファイル「'+esc(h.name)+'」を開くには、ここを押してください → <button class="primary" id="bnLastBtn">前回のファイルを開く</button>';
+  $('bnLastBtn').addEventListener('click', async ()=>{
+    try{
+      if(await h.requestPermission({mode:'readwrite'}) !== 'granted') return;
+      await openHandle(h);
+    }catch(e){ alert('開けませんでした。ファイルが移動・削除されていないか確かめてください。\n'+e.message); }
+  });
+}
+boot();
+</script>
+</body>
+</html>
