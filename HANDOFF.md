@@ -14,7 +14,7 @@
   4. 前年度から作る・まとめて見る(学校全体)
 - **次のセッションでは、ユーザーに第1段階の使い心地を聞いてから、第2段階に進む。**
 - 作ったものの説明は「6. 作りの概要」。
-- GitHub: https://github.com/soichiroteacher/work-planner(**非公開**、ブランチ main。2026-09-27 にユーザーの依頼で作成)。アプリのファイルを変えたら commit・push する。
+- GitHub: https://github.com/soichiroteacher/work-planner(**公開**、ブランチ main。2026-09-27 に非公開で作成し、同じ日にユーザーの依頼で公開にした。GitHub Pages: https://soichiroteacher.github.io/work-planner/ は開発・確認用で、先生方は校務共有サーバーから開く)。**公開なので、実データは絶対にコミットしない。**アプリのファイルを変えたら commit・push する。
 - リンク集(`../index.html`)には、アプリができてから追加する(今追加すると、開けないリンクになるため)。アプリ一覧(`../README.md`)には「作成中」として載せてある。
 
 ## 1. ユーザーの要望(2026-09-27 に聞き取ったもの。ユーザーの言葉をなるべくそのまま残す)
