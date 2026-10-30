@@ -151,7 +151,8 @@
   tasks: [{ id:'t…', projectId:''(なし可), name, assignees:[memberId], start:'YYYY-MM-DD'|'', due:'YYYY-MM-DD'|'',
             status:'未着手'|'作業中'|'完了', workload:1|2|3, memo, caution, repeatYearly:true, order }],
   meetings: [],                   // 第3段階で使う
-  editLock: { active:false, since:null, by:'' }
+  editLock: { active:false, since:null, by:'', session:'' },  // session はその画面の識別(SESSION_ID)
+  editLog: [{ by:'山田', start:'ISO時刻', end:'ISO時刻' }]   // 編集の記録。だれが・いつだけ。新しいものから200件(EDIT_LOG_MAX)
 }
 ```
 
@@ -178,7 +179,9 @@
 | 一覧の並べ替え | `LIST_COLS`(列と並べ替えに使う値)、`compareTasks` |
 | 入力画面 | `openTaskModal`、`openProjectModal`、`moveProject` |
 | ファイル | `openHandle`、`doOpen`、`writeFile`、`doSaveAs`、`doSave`、`markDirty` |
-| 編集の開始・終了 | `openEditDialog`、`startEditing`、`stopEditing` |
+| 編集の開始・終了 | `openEditDialog`、`startEditing`、`stopEditing`、`newLock` |
+| 編集の記録 | `beginLog`(編集を始めたとき1件足す)、`touchLog`(`writeFile` のたびに自分の件の end を更新)、`openLogDialog` |
+| はじめての方へ | `GUIDE`(案内の各ページの文。ボタンの名前を変えたらここも直す)、`openGuide`、`showSample` |
 | 見本 | `makeSample`(架空の名前。今日の日付に合わせて進み具合を決める) |
 | 年度の12か月 | `fyMonths`(ガントチャートの見出し・仕事量・印刷で共通) |
 | 仕事量の表 | `monthLoad`(担当者×月の合計)、`loadTableHtml`(表。画面と印刷で共通)、`renderLoad` |
@@ -201,3 +204,11 @@
 - ファイルの読み書きは、ブラウザ内の試験用の場所(`navigator.storage.getDirectory()` で得たファイル)を `openHandle(h)` に渡すと、ファイル選択の画面なしで試せる。`window.confirm` は `()=>true` などに置き換えて試す。
 - 見本は `document.getElementById('bnSample').click()`。
 - 印刷の中身は、`window.print()` を呼ばずに確かめられる: `openPrintDialog(); closeOverlay('printOverlay'); buildPrint(readPrintOptions());` のあと、`body > *:not(#printArea)` を `display:none` に、`#printArea` を `display:block` にすると画面に出る(確かめたらページを読み直す)。
+
+## 7. 編集の記録と「はじめての方へ」(2026-10-30。共通ルール `../CLAUDE.md`「編集中の表示と編集の記録」「見本データと使い方の案内」に合わせた)
+
+- `editLog` は、編集を始めたとき(`startEditing` と新規作成)に `{by, start, end}` を1件足し、保存のたび(`writeFile` の中の `touchLog`)に自分の件(`myLogStart` で見分ける)の `end` を今の時刻にする。ハートビートの保存でも更新される。
+- 見本では記録しない(`beginLog` が何もしない)。見本の `makeSample` には架空の記録を4件入れてある。
+- `editLog` のない古いファイルは `normalizeState` で空の記録として読む。復元(データを読み込む)のときは、今の記録を引き継ぐ。
+- 「○○先生が編集中」の警告は、印が15分以内に更新されていて、別の画面(`session` が違う)かつ別の名前のときに出す。
+- 「はじめての方へ」は、上の帯と最初の画面にボタンがある。6ページの手順つき案内で、「見本で試す」から見本に切り替えられる(実際のファイルを開いているときは確認を出し、編集を終えてから切り替える)。

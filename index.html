@@ -207,6 +207,10 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
 .p-note.od{ color:var(--warn); font-weight:bold; }
 .p-note.in{ z-index:3; top:calc((var(--p-row) - var(--p-small) - 4px) / 2); line-height:calc(var(--p-small) + 4px); background:#fff; padding:0 4px; border-radius:3px; }
 #printOverlay select{ width:auto; }
+.guide{ font-size:16px; line-height:1.7; min-height:230px; }
+.guide h3{ font-size:17px; margin:0 0 8px; color:var(--accent); }
+.guide ol, .guide ul{ margin:0; padding-left:1.4em; }
+.guide .kbd{ display:inline-block; border:1px solid var(--line-strong); border-radius:5px; padding:0 8px; background:#fff; font-size:14px; }
 .p-load{ margin-top:10px; break-inside:avoid; }
 .p-load h2{ font-size:calc(var(--p-font) + 2px); margin:0 0 3px; }
 .p-load table.load{ font-size:var(--p-font); }
@@ -227,6 +231,8 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
   <button id="btnSave" disabled>保存</button>
   <button id="btnOpen">開く</button>
   <button id="btnNew">新規作成</button>
+  <button id="btnLog" title="だれが・いつ編集したかを見ます">編集の記録</button>
+  <button id="btnGuide">はじめての方へ</button>
   <span id="status"></span>
   <span id="fileName"></span>
 </header>
@@ -245,6 +251,7 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
       <button class="primary" id="bnOpen">データファイルを開く</button>
       <button id="bnNew">新規作成</button>
       <button id="bnSample">見本を表示する</button>
+      <button id="bnGuide">はじめての方へ(使い方)</button>
     </div>
     <div id="bnLast" style="margin-top:12px" hidden></div>
   </div>
@@ -420,6 +427,31 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
   </div>
 </div>
 
+<!-- ===== 編集の記録 ===== -->
+<div class="overlay" id="logOverlay">
+  <div class="modal" style="width:560px">
+    <h2>編集の記録</h2>
+    <p class="hint">だれが・いつ編集したかの記録です(新しい順。何を変えたかは残りません)。時刻は「編集を始めた時刻 〜 最後に保存した時刻」です。新しいものから200件まで残ります。</p>
+    <div id="logBody" style="max-height:60vh;overflow:auto"></div>
+    <div class="foot"><span class="spacer"></span><button id="logClose">閉じる</button></div>
+  </div>
+</div>
+
+<!-- ===== はじめての方へ(使い方の案内) ===== -->
+<!-- ★ 画面のボタンの名前や場所を変えたら、ここの説明も同時に直すこと(共通ルール) -->
+<div class="overlay" id="guideOverlay">
+  <div class="modal" style="width:680px">
+    <h2>はじめての方へ(使い方)</h2>
+    <div id="guideBody" class="guide"></div>
+    <div class="foot">
+      <button id="gdPrev">◀ 前へ</button><span id="gdPage" class="hint"></span><button id="gdNext">次へ ▶</button>
+      <span class="spacer"></span>
+      <button id="gdSample">見本で試す</button>
+      <button id="gdClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <!-- 印刷する内容(印刷のときだけ組み立てる) -->
 <div id="printArea"></div>
 
@@ -466,6 +498,10 @@ let isSample = false;      // 見本を表示中か(見本は保存しない)
 let lastKnownModified = 0; // 最後に読み書きしたときのファイルの更新時刻(ほかの人の保存に気づくため)
 let lastLockStamp = 0;     // 最後に「編集中」の印を保存した時刻
 const supportsFSA = 'showOpenFilePicker' in window;
+// この画面の識別。編集中の印(editLock.session)に書き、同じ先生が別の画面で開いているのと区別できるようにする
+const SESSION_ID = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+let myLogStart = null;     // 自分の編集の記録(editLog)の start。保存のたびに、その件の end を更新する
+const EDIT_LOG_MAX = 200;  // 編集の記録を残す件数(共通ルール)
 
 // 画面の表示の好み(人ごと。ブラウザに覚えておくだけで、データファイルには入れない)
 const view = loadPref('wp.view', { tab:'gantt', scale:'week', gFilter:'', gHideDone:false, lGroup:true, lHideDone:false, lFilter:'', sortKey:'start', sortDir:1,
@@ -528,7 +564,8 @@ function emptyState(scopeType, scopeName, fy){
     projects: [],
     tasks: [],
     meetings: [],
-    editLock: { active:false, since:null, by:'' },
+    editLock: { active:false, since:null, by:'', session:'' },
+    editLog: [],   // 編集の記録 [{ by, start, end }]。誰が・いつ編集したかだけ(何を変えたかは残さない)
   };
 }
 // 読み込んだデータに足りない項目を補う(古い形式のファイルや、手で直したファイルも開けるように)。
@@ -555,7 +592,9 @@ function normalizeState(o){
     return t;
   });
   if(!Array.isArray(o.meetings)) o.meetings = [];
-  if(!o.editLock || typeof o.editLock!=='object') o.editLock = { active:false, since:null, by:'' };
+  if(!o.editLock || typeof o.editLock!=='object') o.editLock = { active:false, since:null, by:'', session:'' };
+  // editLog のない古いファイルは、空の記録として読む
+  o.editLog = (Array.isArray(o.editLog)?o.editLog:[]).filter(e=>e && e.start).map(e=>({ by:String(e.by||''), start:String(e.start), end:String(e.end||e.start) }));
   return o;
 }
 function sortedProjects(){ return state.projects.slice().sort((a,b)=>a.order-b.order); }
@@ -596,6 +635,7 @@ function renderTop(){
   $('editBadge').classList.toggle('on', editing);
   $('btnEdit').textContent = editing ? '編集を終える' : '✏ 編集する';
   $('btnEdit').disabled = !has;
+  $('btnLog').disabled = !has;
   $('btnReload').hidden = !fileHandle || editing;
   $('btnSave').disabled = !editing || isSample;
   $('fileName').textContent = fileHandle ? 'ファイル：' + fileHandle.name : '';
@@ -1328,6 +1368,7 @@ $('btnImport').addEventListener('click', ()=>{
     try{ o = normalizeState(JSON.parse(text)); }catch(e){ alert('読み込めませんでした。\n'+e.message+'\n\n「データを書き出す(バックアップ)」で作ったファイルを選んでください。'); return; }
     if(!confirm('「'+name+'」の内容で、今のデータを置き換えます。今のデータは消えます。よろしいですか？\n(不安なときは、先に「データを書き出す(バックアップ)」で今の状態を控えてください)')) return;
     o.editLock = state.editLock; // 編集中の印は今のものを引き継ぐ
+    o.editLog = state.editLog;   // 編集の記録も今のものを引き継ぐ(復元したことも、だれがいつ編集したかとして残るように)
     state = o;
     markDirty(); renderAll();
     alert('復元しました。');
@@ -1391,6 +1432,7 @@ async function writeFile(opts){
   }
   state.meta.savedAt = new Date().toISOString();
   state.meta.savedBy = editorName();
+  touchLog(state.meta.savedAt);
   const w = await fileHandle.createWritable();
   await w.write(stateToText(state));
   await w.close();
@@ -1440,6 +1482,40 @@ async function confirmDiscard(){
 }
 function editorName(){ try{ return localStorage.getItem('wp.editorName') || ''; }catch(e){ return ''; } }
 
+//////////////////////// 編集の記録(editLog) ////////////////////////
+// 編集中の印。session でこの画面を区別する
+function newLock(name){ return { active:true, since:new Date().toISOString(), by:name, session:SESSION_ID }; }
+// 編集を始めたときに1件足す(見本では記録しない)。古いものは消して、新しいものから EDIT_LOG_MAX 件だけ残す
+function beginLog(name){
+  if(isSample){ myLogStart = null; return; }
+  const now = new Date().toISOString();
+  myLogStart = now;
+  state.editLog.push({ by:name, start:now, end:now });
+  if(state.editLog.length > EDIT_LOG_MAX) state.editLog = state.editLog.slice(-EDIT_LOG_MAX);
+}
+// 保存のたびに、自分の件の end を今の時刻にする(画面を閉じ忘れても、最後に保存した時刻が残るように)。
+// 保存の前にファイルを読み直して自分の件が見つからないとき(復元など)は、足し直す。
+function touchLog(now){
+  if(isSample || !editing || !myLogStart) return;
+  let e = state.editLog.find(x=>x.start===myLogStart);
+  if(!e){ e = { by:editorName(), start:myLogStart, end:now }; state.editLog.push(e); state.editLog = state.editLog.slice(-EDIT_LOG_MAX); }
+  e.end = now;
+}
+function fmtLogTime(iso){ const d = new Date(iso); return isNaN(d) ? '' : d.getHours()+':'+pad2(d.getMinutes()); }
+function openLogDialog(){
+  if(!state) return;
+  const list = state.editLog.slice().sort((a,b)=>b.start.localeCompare(a.start));
+  $('logBody').innerHTML = list.length
+    ? '<table class="list" style="min-width:0"><thead><tr><th>名前</th><th>日付</th><th>時刻(始めた〜最後に保存した)</th></tr></thead><tbody>'
+      + list.map(e=>{ const d = new Date(e.start);
+          return '<tr><td>'+esc(sensei(e.by))+'</td><td class="nowrap">'+d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()+'('+CONFIG.weekdays[d.getDay()]+')</td><td class="nowrap">'+fmtLogTime(e.start)+' 〜 '+fmtLogTime(e.end)+'</td></tr>'; }).join('')
+      + '</tbody></table>'
+    : '<p class="hint">まだ記録がありません。</p>';
+  $('logOverlay').classList.add('show');
+}
+$('btnLog').addEventListener('click', openLogDialog);
+$('logClose').addEventListener('click', ()=>closeOverlay('logOverlay'));
+
 //////////////////////// 編集する / 編集を終える ////////////////////////
 function openEditDialog(){
   $('eName').value = editorName();
@@ -1464,11 +1540,12 @@ async function startEditing(){
     let h; try{ h = await sha256Hex($('ePw').value); }catch(e){ $('eErr').textContent = e.message; return; }
     if(h !== state.meta.editPasswordHash){ $('eErr').textContent = 'パスワードが違います。'; renderAll(); return; }
   }
-  if(isLockFresh(state.editLock) && state.editLock.by !== name){
+  if(isLockFresh(state.editLock) && state.editLock.session !== SESSION_ID && state.editLock.by !== name){
     if(!confirm('⚠ いま '+sensei(state.editLock.by)+'が編集中です。\n\n同時に編集すると、どちらかの入力が消えてしまいます。\nふつうは、相手が「編集を終える」まで待ってください。\n\nそれでも編集を始めますか？(相手がブラウザを閉じ忘れている場合など)')){ closeOverlay('editOverlay'); renderAll(); return; }
   }
   editing = true;
-  state.editLock = { active:true, since:new Date().toISOString(), by:name };
+  state.editLock = newLock(name);
+  beginLog(name);
   closeOverlay('editOverlay');
   renderAll();
   if(fileHandle && !isSample){
@@ -1480,10 +1557,10 @@ async function startEditing(){
 }
 async function stopEditing(){
   clearTimeout(autosaveTimer);
-  state.editLock = { active:false, since:null, by:'' };
+  state.editLock = { active:false, since:null, by:'', session:'' };
   if(fileHandle && !isSample){
     try{ const ok = await writeFile(); if(ok===false) return; }
-    catch(e){ alert('保存できませんでした。\n'+e.message+'\n\n共有サーバーにつながっているか確かめてから、もう一度「編集を終える」を押してください。'); state.editLock = { active:true, since:new Date().toISOString(), by:editorName() }; return; }
+    catch(e){ alert('保存できませんでした。\n'+e.message+'\n\n共有サーバーにつながっているか確かめてから、もう一度「編集を終える」を押してください。'); state.editLock = newLock(editorName()); return; }
   } else if(!isSample && dirty){
     if(!confirm('まだ保存していません。保存せずに編集を終えると、入力した内容は消えます。\n(「キャンセル」を押してから「保存」を押してください)\n\n保存せずに終えますか？')) { state.editLock.active = true; return; }
   }
@@ -1534,7 +1611,8 @@ $('nOk').addEventListener('click', async ()=>{
   const prev = { state, fileHandle, isSample, editing, dirty };
   state = emptyState(type, name, y);
   fileHandle = null; isSample = false; editing = true; dirty = false;
-  state.editLock = { active:true, since:new Date().toISOString(), by:editorName() };
+  state.editLock = newLock(editorName());
+  beginLog(editorName());
   closeOverlay('newOverlay');
   const ok = await doSaveAs();
   if(!ok){ ({ state, fileHandle, isSample, editing, dirty } = prev); renderAll(); return; } // 保存先を選ばなかったときは元に戻す
@@ -1594,12 +1672,57 @@ function makeSample(){
     });
   });
   s.tasks.push({ id:'tx', projectId:'', name:'教務だよりの発行(月1回)', assignees:['m2'], start:d(4,1), due:d(3,20), status:'作業中', workload:1, memo:'毎月20日ごろ発行', caution:'', repeatYearly:true, order:99 });
+  // 編集の記録の見本(架空の名前)。「編集の記録」ボタンを見本でも試せるように、今日から数日前の記録を作る
+  const ago = (days, h, m) => { const t = new Date(); t.setDate(t.getDate()-days); t.setHours(h, m, 0, 0); return t.toISOString(); };
+  s.editLog = [
+    { by:'山田', start:ago(20,16,5),  end:ago(20,16,48) },
+    { by:'佐藤', start:ago(12,15,30), end:ago(12,15,52) },
+    { by:'伊藤', start:ago(6,8,10),   end:ago(6,8,25) },
+    { by:'山田', start:ago(2,17,0),   end:ago(2,17,35) },
+  ];
   return s;
 }
-$('bnSample').addEventListener('click', ()=>{
-  state = makeSample(); fileHandle = null; isSample = true; editing = false; dirty = false;
+function showSample(){
+  state = makeSample(); fileHandle = null; isSample = true; editing = false; dirty = false; myLogStart = null;
   renderAll(); scrollGanttToToday();
   setStatus('見本を表示しています(「編集する」で入力も試せます。保存はされません)', 'saved');
+}
+$('bnSample').addEventListener('click', showSample);
+
+//////////////////////// はじめての方へ(使い方の案内) ////////////////////////
+// ★ 画面のボタンの名前や場所を変えたら、ここの説明も同時に直すこと(共通ルール)
+const GUIDE = [
+  ['このアプリでできること', '<ul><li>分掌・学年の仕事を「プロジェクト」(例：入学式)と「小業務」(例：式次第の作成)に分けて入力します。</li><li>ガントチャートで、いつ・だれが・どこまで進んだかを見ます。</li><li>仕事量の表で、先生ごと・月ごとの仕事の偏りを見ます。</li><li>A3(掲示用)・A4(配布用)で印刷できます。</li></ul><p>まずは下の「<b>見本で試す</b>」を押すと、架空の教務部のデータで操作を試せます(見本は保存されません)。</p>'],
+  ['データファイルを開く・作る', '<ol><li>いつも使うときは、上の「<span class="kbd">開く</span>」を押し、校務共有サーバーに置いてある分掌・学年のデータファイル(.json)を選びます。</li><li>はじめて使う分掌・学年は「<span class="kbd">新規作成</span>」で作ります。保存する場所は校務共有サーバーのフォルダにしてください。</li><li>次からは、開くと前回のファイルが表示されます。</li></ol>'],
+  ['入力するとき(名前の入力)', '<ol><li>上の「<span class="kbd">✏ 編集する</span>」を押します。</li><li><b>お名前を入れて</b>「編集を始める」を押します。名前が空のままでは始められません。入れた名前は次から最初から入っています。</li><li>編集中は、ほかの先生の画面に「○○先生が編集中」と出ます。<b>編集できるのは1人ずつ</b>です。</li><li>入力した内容は自動で保存されます。終わったら必ず「<span class="kbd">編集を終える</span>」を押してください。</li></ol>'],
+  ['ガントチャートと仕事の一覧', '<ul><li>「<span class="kbd">＋ プロジェクトを追加</span>」「<span class="kbd">＋ 小業務を追加</span>」で入力します(編集中だけ出ます)。</li><li>名前や横棒を押すと、内容・注意点を見たり直したりできます。</li><li>「担当者」で先生をしぼる、「完了を隠す」で終わった仕事を隠す、「月ごと・週ごと・日ごと」で目盛りを変えられます。</li><li>「仕事の一覧」タブでは、列の見出しを押すと並べ替えます。</li></ul>'],
+  ['仕事量の表と印刷', '<ul><li>「<span class="kbd">仕事量の表を表示</span>」に印を付けると、ガントチャートの下に先生ごと・月ごとの仕事量が出ます。色が濃いほど多い月です。</li><li>「<span class="kbd">🖨 印刷</span>」で、用紙(A3横・A4横)、期間、担当者、プロジェクトを選んで印刷します。PDF にもできます。</li></ul>'],
+  ['編集の記録とバックアップ', '<ul><li>上の「<span class="kbd">編集の記録</span>」で、<b>だれが・いつ編集したか</b>を新しい順に見られます(何を変えたかは残りません)。</li><li>「設定」タブの「<span class="kbd">データを書き出す(バックアップ)</span>」で、日付入りの控えを作れます。学期の終わりなどに控えておいてください。</li><li>困ったときは README(使い方の説明書)の「困ったとき」を見てください。</li></ul>'],
+];
+let guidePage = 0;
+function renderGuide(){
+  const [title, body] = GUIDE[guidePage];
+  $('guideBody').innerHTML = '<h3>'+(guidePage+1)+'. '+title+'</h3>'+body;
+  $('gdPage').textContent = (guidePage+1)+' / '+GUIDE.length;
+  $('gdPrev').disabled = guidePage===0;
+  $('gdNext').disabled = guidePage===GUIDE.length-1;
+}
+function openGuide(){ guidePage = 0; renderGuide(); $('guideOverlay').classList.add('show'); }
+$('btnGuide').addEventListener('click', openGuide);
+$('bnGuide').addEventListener('click', openGuide);
+$('gdPrev').addEventListener('click', ()=>{ if(guidePage>0){ guidePage--; renderGuide(); } });
+$('gdNext').addEventListener('click', ()=>{ if(guidePage<GUIDE.length-1){ guidePage++; renderGuide(); } });
+$('gdClose').addEventListener('click', ()=>closeOverlay('guideOverlay'));
+$('gdSample').addEventListener('click', async ()=>{
+  // 実際のファイルを開いているときは、編集を終えてから見本に切り替える(実際のファイルは書き換えない)
+  if(state && !isSample){
+    if(!confirm('見本に切り替えます。今のファイルは、あとで上の「開く」でまた開けます。よろしいですか？')) return;
+    if(!(await confirmDiscard())) return;
+    if(editing) await stopEditing();
+    if(editing) return; // 編集を終えられなかった(保存に失敗した)ときは切り替えない
+  }
+  closeOverlay('guideOverlay');
+  showSample();
 });
 
 //////////////////////// タブ ////////////////////////
