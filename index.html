@@ -389,7 +389,7 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
       <div id="tRepOpts" style="margin-top:6px"></div>
       <div id="tRepSkip" style="margin-top:6px"></div>
     </span></div>
-    <div class="row" id="tPeriodRow"><span class="k" id="tPeriodK">期間</span><span class="v"><input type="date" id="tStart"> 〜 <input type="date" id="tDue"><div class="hint" id="tPeriodHint"></div></span></div>
+    <div class="row" id="tPeriodRow"><span class="k" id="tPeriodK">期間</span><span class="v"><input type="date" id="tStart"> 〜 <input type="date" id="tDue"> <button class="edit-only" data-clear="tStart,tDue" title="期間の日付を消して、空にします">消す</button><div class="hint" id="tPeriodHint"></div></span></div>
     <div class="row" id="tOccRow"><span class="k">済んだ回</span><span class="v">
       <div class="hint" id="tRepPreview"></div>
       <div class="occ-grid" id="tOccList"></div>
@@ -418,9 +418,9 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
     <div class="row"><span class="k">名前</span><span class="v"><input type="text" id="pName" placeholder="例：入学式、学校公開"></span></div>
     <div class="row"><span class="k">主担当</span><span class="v choices" id="pOwners"></span></div>
     <div class="row"><span class="k">内容のメモ</span><span class="v"><textarea id="pMemo"></textarea></span></div>
-    <div class="row"><span class="k">期間</span><span class="v"><input type="date" id="pStart"> 〜 <input type="date" id="pEnd">
+    <div class="row"><span class="k">期間</span><span class="v"><input type="date" id="pStart"> 〜 <input type="date" id="pEnd"> <button class="edit-only" data-clear="pStart,pEnd" title="期間の日付を消して、空にします">消す</button>
       <div class="hint">入れなくてもかまいません。空のときは、中の小業務の期間から自動で決まります。小業務を入れる前に、大まかな時期を並べておきたいときに入れてください。</div></span></div>
-    <div class="row"><span class="k">当日</span><span class="v"><input type="date" id="pEvStart"> 〜 <input type="date" id="pEvEnd">
+    <div class="row"><span class="k">当日</span><span class="v"><input type="date" id="pEvStart"> 〜 <input type="date" id="pEvEnd"> <button class="edit-only" data-clear="pEvStart,pEvEnd" title="当日の日付を消して、空にします">消す</button>
       <div class="hint">行事の本番の日や、提出の締め切り日など(入れなくてもかまいません)。1日だけなら左だけ入れてください。2日以上続くときは、終わりの日も入れてください。ガントチャートに ◆ で出ます。</div></span></div>
     <div class="row"><span class="k">注意点</span><span class="v"><textarea id="pCaution"></textarea></span></div>
     <div class="row"><span class="k">毎年</span><span class="v choices"><label><input type="checkbox" id="pRepeat"> 毎年くり返す(次の年度に写す)</label></span></div>
@@ -1423,6 +1423,13 @@ function openTaskModal(id, presetProjectId){
   if(editing) setTimeout(()=>$('tName').focus(), 30);
 }
 function closeOverlay(id){ $(id).classList.remove('show'); }
+// 日付の欄の「消す」ボタン。Chrome/Edge の日付の欄には消すボタンがなく、年・月・日を1つずつ消す必要があって分かりにくいため付けた。
+// 押したら change を起こして、くり返しの回の一覧なども描き直す。
+document.addEventListener('click', e=>{
+  const b = e.target.closest('[data-clear]');
+  if(!b || !editing) return;
+  b.dataset.clear.split(',').forEach(id=>{ $(id).value = ''; $(id).dispatchEvent(new Event('change', { bubbles:true })); });
+});
 
 // ----- くり返しの入力 -----
 let modalDone = new Set(), modalDates = [];
