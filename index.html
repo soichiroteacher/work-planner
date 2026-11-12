@@ -98,6 +98,14 @@ main{ padding:12px 14px; }
 .pbar{ position:absolute; top:14px; height:7px; background:#555; z-index:2; cursor:pointer; }
 .pbar::before,.pbar::after{ content:""; position:absolute; top:0; width:3px; height:13px; background:#555; }
 .pbar::before{ left:0; } .pbar::after{ right:0; }
+/* くり返しの仕事: 期間の細い線と、各回の ○(済=灰色で塗る、過ぎて済んでいない=赤の太枠) */
+.rline{ position:absolute; top:16px; height:2px; background:#b8c4d2; z-index:1; }
+.occ{ position:absolute; top:10px; width:14px; height:14px; margin-left:-7px; border:2px solid var(--accent); background:#fff; border-radius:50%; z-index:2; cursor:pointer; }
+.occ.done{ background:#9aa3ad; border-color:#7d8690; }
+.occ.od{ border:3px solid var(--warn); background:var(--warn-soft); }
+.occ:hover{ transform:scale(1.25); }
+.legend .occ{ position:static; display:inline-block; vertical-align:middle; margin:0; cursor:default; }
+.rep-icon{ font-size:13px; flex-shrink:0; }
 .pbar.done{ background:#aaa; } .pbar.done::before,.pbar.done::after{ background:#aaa; }
 .st-mark{ font-size:12px; padding:0 5px; border-radius:3px; border:1px solid var(--line-strong); flex-shrink:0; }
 .st-mark.st-doing{ border-color:var(--accent); color:var(--accent); }
@@ -205,8 +213,18 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
 .p-root .pbar::before, .p-root .pbar::after{ height:11px; }
 .p-note{ position:absolute; top:0; line-height:var(--p-row); font-size:var(--p-small); white-space:nowrap; font-weight:normal; }
 .p-note.od{ color:var(--warn); font-weight:bold; }
+.p-rep{ font-size:var(--p-small); font-weight:normal; }
+.p-root .rline{ top:calc(var(--p-row) / 2 - 1px); }
+.p-root .occ{ top:calc((var(--p-row) - var(--p-bar)) / 2); width:var(--p-bar); height:var(--p-bar); margin-left:calc(var(--p-bar) / -2); border-width:1.5px; cursor:default; }
+.p-root .occ.od{ border-width:2.5px; }
+.p-legend .occ{ position:static; display:inline-block; vertical-align:middle; margin:0; }
 .p-note.in{ z-index:3; top:calc((var(--p-row) - var(--p-small) - 4px) / 2); line-height:calc(var(--p-small) + 4px); background:#fff; padding:0 4px; border-radius:3px; }
 #printOverlay select{ width:auto; }
+.occ-grid{ display:flex; flex-wrap:wrap; gap:4px 6px; max-height:170px; overflow:auto; margin-top:4px; }
+.occ-grid label{ font-size:14px; border:1px solid var(--line); border-radius:5px; padding:1px 6px; white-space:nowrap; }
+.occ-grid label.od{ border-color:var(--warn); color:var(--warn); font-weight:bold; }
+.occ-grid label.on{ background:#eee; color:#666; }
+.rep-sub{ display:flex; flex-wrap:wrap; gap:4px 12px; align-items:center; }
 .guide{ font-size:16px; line-height:1.7; min-height:230px; }
 .guide h3{ font-size:17px; margin:0 0 8px; color:var(--accent); }
 .guide ol, .guide ul{ margin:0; padding-left:1.4em; }
@@ -276,12 +294,13 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
       <span><span class="bar st-doing"></span> 作業中</span>
       <span><span class="bar st-done"></span> 完了</span>
       <span><span class="bar st-doing overdue"></span> <span class="od-mark">期限切れ</span> 期限を過ぎて終わっていない</span>
+      <span>🔁 毎週・毎月の仕事： <span class="occ"></span> まだ <span class="occ done"></span> 済 <span class="occ od"></span> 過ぎて済んでいない</span>
       <span>名前をクリックすると、内容や注意点を見る・直すことができます</span>
     </div>
     <div class="gwrap" id="gwrap"><div class="gantt" id="gantt"></div></div>
     <div id="loadPanel" hidden>
       <h2>仕事量(担当者ごと・月ごとの合計)</h2>
-      <p class="hint">数字は、その月にかかっている仕事の重さ(1〜3)の合計です。4〜6月の「重い(3)」の仕事なら、4・5・6月それぞれに3を足します。2人で担当する仕事は、それぞれの先生に数えます。完了した仕事も含みます。色が濃いほど多い月です。名前を押すと、ガントチャートをその先生の仕事だけにします(もう一度押すと全員に戻ります)。</p>
+      <p class="hint">数字は、その月にかかっている仕事の重さ(1〜3)の合計です。4〜6月の「重い(3)」の仕事なら、4・5・6月それぞれに3を足します。🔁 毎週・毎月の仕事は、その月の回数分を足します(毎週の「軽い(1)」が月4回なら4)。2人で担当する仕事は、それぞれの先生に数えます。完了した仕事も含みます。色が濃いほど多い月です。名前を押すと、ガントチャートをその先生の仕事だけにします(もう一度押すと全員に戻ります)。</p>
       <div class="load-wrap" id="loadTable"></div>
     </div>
   </section>
@@ -349,8 +368,24 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
     <div class="row"><span class="k">プロジェクト</span><span class="v"><select id="tProject"></select></span></div>
     <div class="row"><span class="k">小業務の名前</span><span class="v"><input type="text" id="tName"></span></div>
     <div class="row"><span class="k">担当</span><span class="v choices" id="tAssignees"></span></div>
-    <div class="row"><span class="k">期間</span><span class="v"><input type="date" id="tStart"> 〜 <input type="date" id="tDue"><div class="hint">1日で終わる仕事は、同じ日を入れてください。始まりが決まっていなければ、期限だけでもかまいません。</div></span></div>
-    <div class="row"><span class="k">進み具合</span><span class="v choices" id="tStatus"></span></div>
+    <div class="row"><span class="k">くり返し</span><span class="v">
+      <select id="tRepType" style="width:auto">
+        <option value="">くり返さない(1回の仕事)</option>
+        <option value="weekly">毎週(曜日を選ぶ)</option>
+        <option value="monthDay">毎月○日</option>
+        <option value="monthNth">毎月第○○曜日</option>
+        <option value="dates">日付を自分で選ぶ</option>
+      </select>
+      <div id="tRepOpts" style="margin-top:6px"></div>
+      <div id="tRepSkip" style="margin-top:6px"></div>
+    </span></div>
+    <div class="row" id="tPeriodRow"><span class="k" id="tPeriodK">期間</span><span class="v"><input type="date" id="tStart"> 〜 <input type="date" id="tDue"><div class="hint" id="tPeriodHint"></div></span></div>
+    <div class="row" id="tOccRow"><span class="k">済んだ回</span><span class="v">
+      <div class="hint" id="tRepPreview"></div>
+      <div class="occ-grid" id="tOccList"></div>
+      <button id="tOccToday" class="edit-only" style="margin-top:6px">今日までの回をすべて「済」にする</button>
+    </span></div>
+    <div class="row" id="tStatusRow"><span class="k">進み具合</span><span class="v choices" id="tStatus"></span></div>
     <div class="row"><span class="k">仕事量</span><span class="v choices" id="tWorkload"></span></div>
     <div class="row"><span class="k">内容のメモ</span><span class="v"><textarea id="tMemo"></textarea></span></div>
     <div class="row"><span class="k">注意点</span><span class="v"><textarea id="tCaution" placeholder="例：前年度は〇〇で遅れた。△△に早めに連絡する"></textarea></span></div>
@@ -544,7 +579,86 @@ function fyMonths(){
 function memberName(id){ const m = state.meta.members.find(x=>x.id===id); return m ? m.name : ''; }
 function namesOf(ids){ return (ids||[]).map(memberName).filter(Boolean).join('・'); }
 function levelLabel(v){ const l = state.meta.workloadLevels.find(x=>x.value===v); return l ? l.label : ''; }
-function isOverdue(t){ return t.status!=='完了' && isYmd(t.due) && t.due < todayYmd(); }
+function isOverdue(t){
+  if(t.repeat){ const today = todayYmd(), done = new Set(t.doneDates); return occurrences(t).some(d=>d<today && !done.has(d)); }
+  return t.status!=='完了' && isYmd(t.due) && t.due < todayYmd();
+}
+
+//////////////////////// くり返しの仕事(毎週・毎月など) ////////////////////////
+// 決まり(2026-11-12 ユーザーと確認):
+//  - 小業務に「くり返し」の決まりを付ける。ガントチャートは1行のまま、各回の日に ○ を並べる。
+//  - 毎回「済んだ」の印を付ける(doneDates に、済んだ回の日付を入れる)。済んでいない過ぎた回は「期限切れ」。
+//  - 進み具合は、済んだ回の数から自動で決める(statusOf)。
+//  - 仕事量は回数分足す(毎週の「軽い(1)」が月に4回なら、その月は4)。
+//  - 種類は 毎週○曜日 / 毎月○日 / 毎月第○○曜日 / 日付を自分で選ぶ。お休みの月は仕事ごとに選ぶ。
+// t.repeat の形:
+//   { type:'weekly',   weekdays:[1,4], skipMonths:[8] }     毎週 月・木(0=日〜6=土)
+//   { type:'monthDay', day:20,         skipMonths:[8] }     毎月20日(その月にない日は月末)
+//   { type:'monthNth', nth:2, weekday:3, skipMonths:[] }    毎月第2水曜(nth:5 は「最終」)
+//   { type:'dates',    dates:['YYYY-MM-DD', …] }           日付を自分で選ぶ
+// 期間(start〜due)は「くり返す期間」。空なら年度の初めから終わりまで。'dates' は選んだ日の最初〜最後を期間にする。
+const REPEAT_TYPES = { weekly:'毎週', monthDay:'毎月○日', monthNth:'毎月第○○曜日', dates:'日付を自分で選ぶ' };
+function normalizeRepeat(r){
+  if(!r || typeof r!=='object' || !REPEAT_TYPES[r.type]) return null;
+  const ints = (a, lo, hi) => [...new Set((Array.isArray(a)?a:[]).map(Number).filter(n=>Number.isInteger(n) && n>=lo && n<=hi))].sort((x,y)=>x-y);
+  const o = { type:r.type };
+  if(r.type==='dates'){ o.dates = [...new Set((Array.isArray(r.dates)?r.dates:[]).filter(isYmd))].sort(); return o; }
+  o.skipMonths = ints(r.skipMonths, 1, 12);
+  if(r.type==='weekly') o.weekdays = ints(r.weekdays, 0, 6);
+  if(r.type==='monthDay') o.day = Math.min(31, Math.max(1, Number(r.day)||1));
+  if(r.type==='monthNth'){ o.nth = Math.min(5, Math.max(1, Number(r.nth)||1)); o.weekday = Math.min(6, Math.max(0, Number(r.weekday)||0)); }
+  return o;
+}
+// その回の日付の一覧(古い順)。くり返しでない仕事は空
+function occurrences(t){
+  const r = t.repeat;
+  if(!r) return [];
+  if(r.type==='dates') return r.dates.slice();
+  const fr = (t.start && t.due) ? null : fyRange();
+  const a = t.start ? dayNum(t.start) : fr.start, b = t.due ? dayNum(t.due) : fr.end;
+  const skip = new Set(r.skipMonths), out = [];
+  const ok = n => n>=a && n<=b && !skip.has(Number(numToYmd(n).slice(5,7)));
+  if(r.type==='weekly'){
+    const wd = new Set(r.weekdays);
+    for(let n=a; n<=b; n++) if(wd.has(weekdayOf(n)) && ok(n)) out.push(numToYmd(n));
+    return out;
+  }
+  // 毎月: a の月から b の月まで1か月ずつ
+  let [y, m] = numToYmd(a).split('-').map(Number);
+  while(dayNum(y+'-'+pad2(m)+'-01') <= b){
+    const first = dayNum(y+'-'+pad2(m)+'-01');
+    const last = (m===12 ? dayNum((y+1)+'-01-01') : dayNum(y+'-'+pad2(m+1)+'-01')) - 1;
+    let n;
+    if(r.type==='monthDay') n = Math.min(first + r.day - 1, last);
+    else if(r.nth===5){ n = last; while(weekdayOf(n)!==r.weekday) n--; }
+    else { n = first; while(weekdayOf(n)!==r.weekday) n++; n += 7*(r.nth-1); if(n>last) n = null; }
+    if(n!=null && ok(n)) out.push(numToYmd(n));
+    if(++m>12){ m = 1; y++; }
+  }
+  return out;
+}
+// 進み具合。くり返しの仕事は、済んだ回の数から決める(全部済→完了、1回でも済か始まっている→作業中)
+function statusOf(t){
+  if(!t.repeat) return t.status;
+  const occ = occurrences(t), done = new Set(t.doneDates), today = todayYmd();
+  const n = occ.filter(d=>done.has(d)).length;
+  if(occ.length && n===occ.length) return '完了';
+  return (n>0 || occ.some(d=>d<=today)) ? '作業中' : '未着手';
+}
+function doneCount(t){ const done = new Set(t.doneDates); return occurrences(t).filter(d=>done.has(d)).length; }
+// 次に来る、まだ済んでいない回
+function nextOccurrence(t){ const done = new Set(t.doneDates), today = todayYmd(); return occurrences(t).find(d=>d>=today && !done.has(d)) || ''; }
+// 決まりを短い文字にする(例: 毎週 月・木(8月は休み))
+function repeatText(r){
+  if(!r) return '';
+  const wd = CONFIG.weekdays;
+  let s = r.type==='weekly' ? '毎週 '+(r.weekdays.length ? r.weekdays.map(i=>wd[i]).join('・') : '(曜日なし)')
+    : r.type==='monthDay' ? '毎月'+(r.day>=31 ? '末日' : r.day+'日')
+    : r.type==='monthNth' ? '毎月'+(r.nth===5 ? '最終' : '第'+r.nth)+wd[r.weekday]+'曜'
+    : '日付を指定('+r.dates.length+'回)';
+  if(r.skipMonths && r.skipMonths.length) s += '(' + r.skipMonths.map(m=>m+'月').join('・') + 'は休み)';
+  return s;
+}
 // 名前に「先生」を付けて表示する(入力した名前にすでに付いているときはそのまま)
 function sensei(name){ if(!name) return 'ほかの先生'; return /先生$/.test(name) ? name : name+'先生'; }
 
@@ -589,6 +703,8 @@ function normalizeState(o){
     if(t.projectId && !o.projects.some(p=>p.id===t.projectId)) t.projectId = '';
     if(!Array.isArray(t.assignees)) t.assignees = [];
     t.workload = Number(t.workload) || 2;
+    t.repeat = normalizeRepeat(t.repeat);                                    // くり返しの決まり(なければ null)
+    t.doneDates = (Array.isArray(t.doneDates)?t.doneDates:[]).filter(isYmd); // くり返しの仕事の、済んだ回の日付
     return t;
   });
   if(!Array.isArray(o.meetings)) o.meetings = [];
@@ -611,7 +727,7 @@ function projectSpan(pid){
   projectTasks(pid).forEach(t=>{ const sp = taskSpan(t); if(sp){ a=Math.min(a,sp.a); b=Math.max(b,sp.b); } });
   return a===Infinity ? null : {a,b};
 }
-function projectDone(pid){ const ts = projectTasks(pid); return ts.length>0 && ts.every(t=>t.status==='完了'); }
+function projectDone(pid){ const ts = projectTasks(pid); return ts.length>0 && ts.every(t=>statusOf(t)==='完了'); }
 // 小業務の並び順: 始まり(なければ期限)の早い順。日付のないものは最後。
 function taskDateKey(t){ return t.start || t.due || '9999-99-99'; }
 
@@ -667,7 +783,7 @@ function renderFilters(){
 //////////////////////// ガントチャート ////////////////////////
 // 表示する行を組み立てる。プロジェクトの行の下に、その小業務の行を並べる。プロジェクトに入っていない小業務は最後にまとめる。
 function ganttRows(filter, hideDone){
-  const match = t => (!filter || t.assignees.includes(filter)) && !(hideDone && t.status==='完了');
+  const match = t => (!filter || t.assignees.includes(filter)) && !(hideDone && statusOf(t)==='完了');
   const rows = [];
   const groups = sortedProjects().map(p=>({ p, tasks: projectTasks(p.id) }));
   const loose = state.tasks.filter(t=>!t.projectId);
@@ -742,20 +858,37 @@ function renderGantt(){
         + '<span class="who">'+esc(namesOf(p.owners))+'</span></div>'
         + '<div class="gtime" style="width:'+W+'px">'+bar(sp, 'pbar'+(done?' done':''), 'data-proj="'+esc(p.id)+'" title="'+esc(p.name)+'"')+'</div></div>';
     } else {
-      const t = r.t, od = isOverdue(t), sp = taskSpan(t);
-      const cls = 'bar '+STATUS_CLASS[t.status]+(od?' overdue':'');
-      const tip = esc(t.name+'\n'+(t.start?fmtMDW(t.start)+' 〜 ':'期限 ')+fmtMDW(t.due)+'\n'+t.status+(od?'(期限切れ)':'')+'\n'+namesOf(t.assignees));
-      let note = '';
+      const t = r.t, od = isOverdue(t), sp = taskSpan(t), st = statusOf(t);
+      const cls = 'bar '+STATUS_CLASS[st]+(od?' overdue':'');
+      const tip = esc(t.name+'\n'+(t.repeat ? repeatText(t.repeat)+'\n' : '')+(t.start?fmtMDW(t.start)+' 〜 ':'期限 ')+fmtMDW(t.due)+'\n'+st+(od?'(期限切れ)':'')+'\n'+namesOf(t.assignees));
+      let note = '', body;
       if(sp && sp.b>=start && sp.a<=end){
         const endX = Math.max(x(Math.max(sp.a,start))+8, x(Math.min(sp.b,end)+1));
-        note = '<div class="bar-note'+(od?' overdue':'')+'" style="left:'+(endX+6)+'px">'+esc(namesOf(t.assignees))+(od?' 期限切れ':'')+'</div>';
+        const text = esc(namesOf(t.assignees))+(od?' 期限切れ':'');
+        // 横棒の右に名前を出す。右端からはみ出すとき(1年中続く仕事など)は出さない(左の列に名前がある)
+        if(endX + 6 + 120 <= W) note = '<div class="bar-note'+(od?' overdue':'')+'" style="left:'+(endX+6)+'px">'+text+'</div>';
       }
+      if(t.repeat){
+        // くり返しの仕事: 期間に細い線を引き、各回の日に ○ を置く(済んだ回は塗る、過ぎて済んでいない回は赤)。
+        // 編集中は ○ を押すと「済んだ/まだ」を切り替えられる。
+        const done = new Set(t.doneDates), today = todayYmd();
+        body = (sp && sp.b>=start && sp.a<=end) ? '<div class="rline" style="left:'+x(Math.max(sp.a,start))+'px;width:'+(x(Math.min(sp.b,end)+1)-x(Math.max(sp.a,start)))+'px"></div>' : '';
+        occurrences(t).forEach(d=>{
+          const n = dayNum(d); if(n<start || n>end) return;
+          const k = done.has(d) ? 'done' : d<today ? 'od' : '';
+          body += '<div class="occ '+k+'" style="left:'+(x(n)+Math.round(ppd/2))+'px" data-occ="'+esc(t.id)+'|'+d+'" title="'+esc(t.name)+'\n'+fmtMDW(d)+'　'+(done.has(d)?'済':d<today?'まだ(期限切れ)':'まだ')+(editing?'\n押すと「済」と「まだ」を切り替えます':'')+'"></div>';
+        });
+      } else body = bar(sp, cls, 'data-task="'+esc(t.id)+'" title="'+tip+'"');
+      const mark = od ? '<span class="od-mark">期限切れ</span>'
+        : t.repeat ? '<span class="st-mark '+STATUS_CLASS[st]+'" title="済んだ回 / 全部の回">'+doneCount(t)+'/'+occurrences(t).length+'回</span>'
+        : '<span class="st-mark '+STATUS_CLASS[st]+'">'+st+'</span>';
       html += '<div class="grow task"><div class="glabel" data-task="'+esc(t.id)+'" title="'+tip+'">'
+        + (t.repeat ? '<span class="rep-icon" title="'+esc(repeatText(t.repeat))+'">🔁</span>' : '')
         + '<span class="nm">'+esc(t.name||'(名前なし)')+'</span>'
         + (t.caution ? '<span class="caution" title="注意点があります">⚠</span>' : '')
-        + (od ? '<span class="od-mark">期限切れ</span>' : '<span class="st-mark '+STATUS_CLASS[t.status]+'">'+t.status+'</span>')
+        + mark
         + '<span class="who">'+esc(namesOf(t.assignees))+'</span></div>'
-        + '<div class="gtime" style="width:'+W+'px">'+bar(sp, cls, 'data-task="'+esc(t.id)+'" title="'+tip+'"')+note+'</div></div>';
+        + '<div class="gtime" style="width:'+W+'px">'+body+note+'</div></div>';
     }
   });
   if(rows.length===0){
@@ -771,6 +904,7 @@ function renderGantt(){
 //////////////////////// 仕事量(偏りを見る表) ////////////////////////
 // 担当者 × 月 の仕事量の合計を出す。
 // 決まり(2026-09-27 ユーザーと確認): 期間中ずっとその重さとみなす(4〜6月の「重い(3)」→ 4・5・6月それぞれに3)。
+// ただし、くり返しの仕事は回数分足す(毎週の「軽い(1)」が月に4回なら4)。
 // 複数で担当する仕事は、担当者それぞれに同じ重さを足す。担当のない仕事は '' (担当なし)に数える。
 function monthLoad(tasks, months, memberIds){
   const idx = new Map(memberIds.map((id,i)=>[id,i]));
@@ -779,12 +913,16 @@ function monthLoad(tasks, months, memberIds){
   tasks.forEach(t=>{
     const sp = taskSpan(t); if(!sp) return;
     const who = t.assignees.length ? t.assignees : [''];
+    // くり返しの仕事は、その月にある回の数だけ重さを足す(2026-11-12 ユーザーと確認)
+    const occ = t.repeat ? occurrences(t).map(dayNum) : null;
     months.forEach((m,j)=>{
-      if(sp.b<m.a || sp.a>m.b) return;
+      let times = 1;
+      if(occ){ times = occ.filter(n=>n>=m.a && n<=m.b).length; if(!times) return; }
+      else if(sp.b<m.a || sp.a>m.b) return;
       who.forEach(id=>{
         const i = idx.get(id); if(i===undefined) return;
-        vals[i][j] += t.workload;
-        tips[i][j].push(t.name+'('+levelLabel(t.workload)+')');
+        vals[i][j] += t.workload * times;
+        tips[i][j].push(t.name+'('+levelLabel(t.workload)+(occ ? '×'+times+'回' : '')+')');
       });
     });
   });
@@ -832,6 +970,15 @@ $('loadTable').addEventListener('click', e=>{
   savePref(); renderFilters(); renderGantt();
 });
 $('gShowLoad').addEventListener('change', e=>{ view.showLoad = e.target.checked; savePref(); renderLoad(); });
+// くり返しの仕事の1回分を「済んだ/まだ」に切り替える(ガントチャートの ○ を押したとき)
+function toggleOccurrence(id, d){
+  const t = state.tasks.find(x=>x.id===id); if(!t || !editing) return;
+  const done = new Set(t.doneDates);
+  done.has(d) ? done.delete(d) : done.add(d);
+  t.doneDates = [...done].sort();
+  t.status = statusOf(t);   // データファイルの status も合わせておく(ほかの道具で開いたときに分かるように)
+  markDirty(); renderGantt();
+}
 // 今日の位置が見えるように横に動かす(開いたときと、目盛りを変えたとき)
 function scrollGanttToToday(){
   if(!state) return;
@@ -844,6 +991,12 @@ function scrollGanttToToday(){
 $('gantt').addEventListener('click', e=>{
   const tg = e.target.closest('[data-toggle]');
   if(tg){ const id = tg.dataset.toggle; collapsed.has(id) ? collapsed.delete(id) : collapsed.add(id); savePref(); renderGantt(); return; }
+  const oc = e.target.closest('[data-occ]');
+  if(oc){
+    const [id, d] = oc.dataset.occ.split('|');
+    if(!editing){ openTaskModal(id); return; }   // 閲覧中は、内容を見る画面を開く
+    toggleOccurrence(id, d); return;
+  }
   const tk = e.target.closest('[data-task]');
   if(tk){ openTaskModal(tk.dataset.task); return; }
   const pj = e.target.closest('[data-proj]');
@@ -876,7 +1029,7 @@ function printRows(opt){
   const match = t => { const sp = taskSpan(t);
     return sp && sp.b>=opt.range.a && sp.a<=opt.range.b
       && (!opt.member || t.assignees.includes(opt.member))
-      && (opt.includeDone || t.status!=='完了'); };
+      && (opt.includeDone || statusOf(t)!=='完了'); };
   const groups = sortedProjects().filter(p=>opt.projects.has(p.id)).map(p=>({ p, tasks: projectTasks(p.id) }));
   if(opt.projects.has('')) groups.push({ p:null, tasks: state.tasks.filter(t=>!t.projectId) });
   const rows = [];
@@ -936,10 +1089,22 @@ function printHtml(opt, W){
         + '<td><div class="p-time">'+lines+(p ? bar(c, 'pbar'+(projectDone(p.id)?' done':''))
         + note(c, p.owners.length ? '主担当 '+namesOf(p.owners) : '', '') : '')+'</div></td></tr>';
     } else {
-      const t = r.t, od = isOverdue(t), c = clip(taskSpan(t));
+      const t = r.t, od = isOverdue(t), c = clip(taskSpan(t)), st = statusOf(t);
+      if(t.repeat){
+        // くり返しの仕事: 各回の ○ を並べる。決まり(毎月20日など)と担当は、○ と重ならないよう左の名前の欄に書く
+        const done = new Set(t.doneDates), today = todayYmd();
+        let marks = c ? '<div class="rline" style="left:'+x(c.a)+'px;width:'+(x(c.b+1)-x(c.a))+'px"></div>' : '';
+        occurrences(t).forEach(d=>{ const n = dayNum(d); if(n<start || n>end) return;
+          marks += '<div class="occ '+(done.has(d) ? 'done' : d<today ? 'od' : '')+'" style="left:'+x(n+0.5)+'px"></div>'; });
+        body += '<tr class="p-task"><td class="p-label"><div class="p-lab"><span class="nm">🔁 '+esc(t.name||'(名前なし)')
+          + ' <span class="p-rep">'+esc([repeatText(t.repeat), namesOf(t.assignees)].filter(Boolean).join('　'))+'</span></span>'
+          + (od ? '<span class="p-st od">期限切れ</span>' : '<span class="p-st">済'+doneCount(t)+'/'+occurrences(t).length+'回</span>')+'</div></td>'
+          + '<td><div class="p-time">'+lines+marks+'</div></td></tr>';
+        return;
+      }
       body += '<tr class="p-task"><td class="p-label"><div class="p-lab"><span class="nm">'+esc(t.name||'(名前なし)')+'</span>'
-        + (od ? '<span class="p-st od">期限切れ</span>' : '<span class="p-st">'+t.status+'</span>')+'</div></td>'
-        + '<td><div class="p-time">'+lines+bar(c, 'bar '+STATUS_CLASS[t.status]+(od?' overdue':''))
+        + (od ? '<span class="p-st od">期限切れ</span>' : '<span class="p-st">'+st+'</span>')+'</div></td>'
+        + '<td><div class="p-time">'+lines+bar(c, 'bar '+STATUS_CLASS[st]+(od?' overdue':''))
         + note(c, [namesOf(t.assignees), periodText(t)].filter(Boolean).join('　'), od?'od':'')+'</div></td></tr>';
     }
   });
@@ -952,6 +1117,7 @@ function printHtml(opt, W){
     + (opt.includeDone ? '' : '(完了した仕事は省略)')+'　印刷 '+today.getFullYear()+'/'+(today.getMonth()+1)+'/'+today.getDate()+'</span></div>'
     + '<div class="p-legend"><span><span class="bar st-todo"></span> 未着手</span><span><span class="bar st-doing"></span> 作業中</span>'
     + '<span><span class="bar st-done"></span> 完了</span><span><span class="bar st-doing overdue"></span> 期限を過ぎて終わっていない</span>'
+    + '<span>🔁 毎週・毎月の仕事 <span class="occ"></span> まだ <span class="occ done"></span> 済 <span class="occ od"></span> 過ぎて済んでいない</span>'
     + '<span>赤い点線は印刷した日</span></div>'
     + '<table class="p-gantt" style="width:'+W+'px"><colgroup><col style="width:'+P.label+'px"><col style="width:'+TW+'px"></colgroup>'
     + '<thead><tr><th class="p-label"><div class="p-lab">プロジェクト / 小業務</div></th><th><div class="p-time p-head">'
@@ -963,7 +1129,7 @@ function printHtml(opt, W){
     const tasks = state.tasks.filter(t=>opt.projects.has(t.projectId));
     const ids = opt.member ? [opt.member] : loadMemberIds(tasks);
     html += '<div class="p-load"><h2>仕事量(担当者ごと・月ごとの合計)</h2>' + loadTableHtml(tasks, months, ids, '')
-      + '<div class="hint">仕事の重さ(1〜3)を、その仕事の期間にかかる月それぞれに足した数です。2人で担当する仕事は、それぞれに数えます。完了した仕事も含みます。</div></div>';
+      + '<div class="hint">仕事の重さ(1〜3)を、その仕事の期間にかかる月それぞれに足した数です(毎週・毎月の仕事は、その月の回数分)。2人で担当する仕事は、それぞれに数えます。完了した仕事も含みます。</div></div>';
   }
   return html;
 }
@@ -1058,7 +1224,7 @@ const LIST_COLS = [
   { key:'assignees',label:'担当',         get:t=>namesOf(t.assignees) },
   { key:'start',    label:'始まり',       get:t=>t.start },
   { key:'due',      label:'期限',         get:t=>t.due },
-  { key:'status',   label:'進み具合',     get:t=>CONFIG.statuses.indexOf(t.status) },
+  { key:'status',   label:'進み具合',     get:t=>CONFIG.statuses.indexOf(statusOf(t)) },
   { key:'workload', label:'仕事量',       get:t=>t.workload },
   { key:'repeat',   label:'毎年',         get:t=>t.repeatYearly?0:1 },
   { key:'memo',     label:'メモ・注意点', get:t=>(t.caution?'0':'1')+t.memo },
@@ -1075,18 +1241,24 @@ function compareTasks(a, b){
 }
 function renderList(){
   const cols = view.lGroup ? LIST_COLS.filter(c=>c.key!=='project') : LIST_COLS;
-  const match = t => (!view.lFilter || t.assignees.includes(view.lFilter)) && !(view.lHideDone && t.status==='完了');
+  const match = t => (!view.lFilter || t.assignees.includes(view.lFilter)) && !(view.lHideDone && statusOf(t)==='完了');
   let html = '<thead><tr>' + cols.map(c=>'<th data-sort="'+c.key+'">'+c.label+(c.key===view.sortKey ? ' <span class="arrow">'+(view.sortDir>0?'▲':'▼')+'</span>' : '')+'</th>').join('') + '</tr></thead><tbody>';
   const taskRow = t => {
     const od = isOverdue(t);
     const cells = cols.map(c=>{
       switch(c.key){
         case 'project': { const p = state.projects.find(p=>p.id===t.projectId); return '<td>'+esc(p?p.name:'')+'</td>'; }
-        case 'name': return '<td>'+esc(t.name)+'</td>';
+        case 'name': {
+          if(!t.repeat) return '<td>'+esc(t.name)+'</td>';
+          const nx = nextOccurrence(t);
+          return '<td>🔁 '+esc(t.name)+'<div class="hint">'+esc(repeatText(t.repeat))+(nx ? '　次は '+fmtMDW(nx) : '')+'</div></td>';
+        }
         case 'assignees': return '<td>'+esc(namesOf(t.assignees))+'</td>';
         case 'start': return '<td class="nowrap">'+fmtMDW(t.start)+'</td>';
         case 'due': return '<td class="nowrap">'+fmtMDW(t.due)+(od?' <span class="od-mark">期限切れ</span>':'')+'</td>';
-        case 'status': return '<td class="nowrap">'+(editing
+        // くり返しの仕事の進み具合は、済んだ回の数から自動で決まるので選べない(○ を押すか、入力画面で印を付ける)
+        case 'status': if(t.repeat) return '<td class="nowrap">'+statusOf(t)+'<div class="hint">済 '+doneCount(t)+'/'+occurrences(t).length+'回</div></td>';
+          return '<td class="nowrap">'+(editing
             ? '<select data-status="'+esc(t.id)+'">'+CONFIG.statuses.map(s=>'<option'+(s===t.status?' selected':'')+'>'+s+'</option>').join('')+'</select>'
             : t.status)+'</td>';
         case 'workload': return '<td class="nowrap">'+esc(levelLabel(t.workload))+'</td>';
@@ -1094,7 +1266,7 @@ function renderList(){
         case 'memo': return '<td class="memo">'+(t.caution?'<span class="caution">⚠ '+esc(t.caution)+'</span>\n':'')+esc(t.memo)+'</td>';
       }
     }).join('');
-    return '<tr class="task-row'+(t.status==='完了'?' done-row':'')+'" data-task="'+esc(t.id)+'">'+cells+'</tr>';
+    return '<tr class="task-row'+(statusOf(t)==='完了'?' done-row':'')+'" data-task="'+esc(t.id)+'">'+cells+'</tr>';
   };
   let count = 0;
   if(view.lGroup){
@@ -1108,7 +1280,7 @@ function renderList(){
         if(view.lHideDone && projectDone(p.id)) return;
       } else if(shown.length===0) return;
       const sp = p ? projectSpan(p.id) : null;
-      const doneN = tasks.filter(t=>t.status==='完了').length;
+      const doneN = tasks.filter(t=>statusOf(t)==='完了').length;
       html += '<tr class="proj-row"><td colspan="'+cols.length+'">'
         + esc(p ? (p.name||'(名前なし)') : '(プロジェクトに入っていない小業務)')
         + (p && p.caution ? ' <span class="caution">⚠</span>' : '')
@@ -1169,21 +1341,134 @@ function openTaskModal(id, presetProjectId){
     : '<span class="hint">メンバーがまだいません。「設定」タブで追加してください。</span>';
   $('tStatus').innerHTML = choiceHtml('radio', 'tSt', CONFIG.statuses.map(s=>({value:s,label:s})), v=>v===(t?t.status:'未着手'));
   $('tWorkload').innerHTML = choiceHtml('radio', 'tWl', state.meta.workloadLevels.map(l=>({value:l.value,label:l.label})), v=>Number(v)===(t?t.workload:2));
-  ['tProject','tName','tStart','tDue','tMemo','tCaution','tRepeat'].forEach(k=> $(k).disabled = !editing);
+  ['tProject','tName','tStart','tDue','tMemo','tCaution','tRepeat','tRepType'].forEach(k=> $(k).disabled = !editing);
+  // くり返し: 入力画面の中では、決まり(modalRep)・選んだ日(modalDates)・済んだ回(modalDone)を一時的に持ち、「決定」で書き込む
+  const r = t && t.repeat ? t.repeat : null;
+  modalDone = new Set(t ? t.doneDates : []);
+  modalDates = r && r.type==='dates' ? r.dates.slice() : [];
+  $('tRepType').value = r ? r.type : '';
+  renderRepOpts(r);
   $('tDelete').hidden = !editing || !t;
   $('taskErr').textContent = '';
   $('taskOverlay').classList.add('show');
   if(editing) setTimeout(()=>$('tName').focus(), 30);
 }
 function closeOverlay(id){ $(id).classList.remove('show'); }
+
+// ----- くり返しの入力 -----
+let modalDone = new Set(), modalDates = [];
+const WEEK_ORDER = [1,2,3,4,5,6,0];   // 曜日の並び(月〜日)
+const FY_MONTH_ORDER = [4,5,6,7,8,9,10,11,12,1,2,3];
+// くり返しの種類に合わせて、曜日・日・お休みの月などの入力欄を出す
+function renderRepOpts(r){
+  const type = $('tRepType').value, dis = editing ? '' : ' disabled';
+  const wd = CONFIG.weekdays;
+  let h = '';
+  if(type==='weekly'){
+    const sel = new Set(r && r.type==='weekly' ? r.weekdays : []);
+    h = '<div class="rep-sub">'+WEEK_ORDER.map(i=>'<label><input type="checkbox" data-rw="'+i+'"'+(sel.has(i)?' checked':'')+dis+'> '+wd[i]+'</label>').join('')+'</div>';
+  } else if(type==='monthDay'){
+    h = '<div class="rep-sub">毎月 <input type="number" id="tRepDay" min="1" max="31" style="width:70px" value="'+(r && r.type==='monthDay' ? r.day : 1)+'"'+dis+'> 日<span class="hint">(31 にすると、毎月の末日)</span></div>';
+  } else if(type==='monthNth'){
+    const n = r && r.type==='monthNth' ? r.nth : 1, w = r && r.type==='monthNth' ? r.weekday : 1;
+    h = '<div class="rep-sub">毎月 <select id="tRepNth" style="width:auto"'+dis+'>'+[1,2,3,4,5].map(k=>'<option value="'+k+'"'+(k===n?' selected':'')+'>'+(k===5?'最終':'第'+k)+'</option>').join('')+'</select>'
+      + '<select id="tRepWd" style="width:auto"'+dis+'>'+WEEK_ORDER.map(i=>'<option value="'+i+'"'+(i===w?' selected':'')+'>'+wd[i]+'曜日</option>').join('')+'</select></div>';
+  } else if(type==='dates'){
+    h = (editing ? '<div class="rep-sub"><input type="date" id="tRepDate"><button id="tRepAdd">この日を追加</button></div>' : '')
+      + '<div class="occ-grid">'+(modalDates.length ? modalDates.map(d=>'<label>'+fmtMDW(d)+(editing?' <span data-rmdate="'+d+'" title="この日を外す" style="cursor:pointer;color:var(--warn)">✕</span>':'')+'</label>').join('') : '<span class="hint">日付を追加してください。</span>')+'</div>';
+  }
+  $('tRepOpts').innerHTML = h;
+  // お休みの月(「日付を自分で選ぶ」以外)
+  const skip = new Set(r && r.skipMonths ? r.skipMonths : []);
+  $('tRepSkip').innerHTML = (type && type!=='dates')
+    ? '<div class="rep-sub"><span>お休みの月：</span>'+FY_MONTH_ORDER.map(m=>'<label><input type="checkbox" data-skip="'+m+'"'+(skip.has(m)?' checked':'')+dis+'> '+m+'月</label>').join('')+'</div>' : '';
+  // 期間の欄は、くり返すときは「くり返す期間」になる。「日付を自分で選ぶ」ときは選んだ日で決まるので出さない
+  $('tPeriodRow').hidden = type==='dates';
+  $('tPeriodK').textContent = type ? 'くり返す期間' : '期間';
+  $('tPeriodHint').textContent = type ? '空のままなら、年度の初めから終わりまでくり返します。途中から始まる・途中で終わるときだけ入れてください。'
+    : '1日で終わる仕事は、同じ日を入れてください。始まりが決まっていなければ、期限だけでもかまいません。';
+  $('tStatusRow').hidden = !!type;   // くり返しの仕事の進み具合は、済んだ回の数から自動で決まる
+  $('tOccRow').hidden = !type;
+  renderOccList();
+}
+// 入力欄から決まりを読む(くり返さないときは null)
+function readRep(){
+  const type = $('tRepType').value;
+  if(!type) return null;
+  const skipMonths = [...document.querySelectorAll('[data-skip]:checked')].map(c=>Number(c.dataset.skip));
+  if(type==='weekly') return normalizeRepeat({ type, skipMonths, weekdays:[...document.querySelectorAll('[data-rw]:checked')].map(c=>Number(c.dataset.rw)) });
+  if(type==='monthDay') return normalizeRepeat({ type, skipMonths, day:$('tRepDay').value });
+  if(type==='monthNth') return normalizeRepeat({ type, skipMonths, nth:$('tRepNth').value, weekday:$('tRepWd').value });
+  return normalizeRepeat({ type, dates:modalDates });
+}
+// その回の一覧を出し、済んだ回に印を付けられるようにする
+function renderOccList(){
+  const r = readRep();
+  if(!r){ $('tOccList').innerHTML = ''; $('tRepPreview').textContent = ''; return; }
+  const occ = occurrences({ repeat:r, start:$('tStart').value, due:$('tDue').value });
+  const today = todayYmd(), dis = editing ? '' : ' disabled';
+  $('tRepPreview').textContent = occ.length
+    ? 'この決まりで、全部で '+occ.length+' 回あります。済んだ回に印を付けてください(ガントチャートの ○ を押しても付けられます)。'
+    : 'この決まりでは、1回もありません。曜日・日にち・期間・お休みの月を確かめてください。';
+  $('tOccList').innerHTML = occ.map(d=>{
+    const on = modalDone.has(d), od = !on && d<today;
+    return '<label class="'+(on?'on':od?'od':'')+'"><input type="checkbox" data-occd="'+d+'"'+(on?' checked':'')+dis+'> '+fmtMDW(d)+'</label>';
+  }).join('');
+  $('tOccToday').hidden = !editing || !occ.length;
+}
+$('tRepType').addEventListener('change', ()=>renderRepOpts(readRepSafe()));
+// 種類を変えたときは、それまでの入力から使えるもの(お休みの月など)だけ引き継ぐ
+function readRepSafe(){ const skipMonths = [...document.querySelectorAll('[data-skip]:checked')].map(c=>Number(c.dataset.skip)); return { type:$('tRepType').value, skipMonths, weekdays:[], day:1, nth:1, weekday:1, dates:modalDates }; }
+['tRepOpts','tRepSkip'].forEach(id=> $(id).addEventListener('change', renderOccList));
+['tStart','tDue'].forEach(id=> $(id).addEventListener('change', ()=>{ if($('tRepType').value) renderOccList(); }));
+$('tRepOpts').addEventListener('click', e=>{
+  if(e.target.id==='tRepAdd'){
+    const d = $('tRepDate').value;
+    if(!isYmd(d)){ $('taskErr').textContent = '追加する日付を選んでください。'; return; }
+    $('taskErr').textContent = '';
+    if(!modalDates.includes(d)) modalDates.push(d), modalDates.sort();
+    renderRepOpts(readRep());
+    return;
+  }
+  const rm = e.target.closest('[data-rmdate]');
+  if(rm){ e.preventDefault(); modalDates = modalDates.filter(d=>d!==rm.dataset.rmdate); renderRepOpts(readRep()); }
+});
+$('tOccList').addEventListener('change', e=>{
+  const c = e.target.closest('[data-occd]'); if(!c || !editing) return;
+  c.checked ? modalDone.add(c.dataset.occd) : modalDone.delete(c.dataset.occd);
+  renderOccList();
+});
+$('tOccToday').addEventListener('click', ()=>{
+  const r = readRep(); if(!r || !editing) return;
+  const today = todayYmd();
+  occurrences({ repeat:r, start:$('tStart').value, due:$('tDue').value }).forEach(d=>{ if(d<=today) modalDone.add(d); });
+  renderOccList();
+});
+
 $('tCancel').addEventListener('click', ()=>closeOverlay('taskOverlay'));
 $('tOk').addEventListener('click', ()=>{
   if(!editing) return;
   const name = $('tName').value.trim();
-  const start = $('tStart').value, due = $('tDue').value;
+  let start = $('tStart').value, due = $('tDue').value;
+  const rep = readRep();
   if(!name){ $('taskErr').textContent = '小業務の名前を入れてください。'; return; }
-  if(!start && !due){ $('taskErr').textContent = '期間(始まりか期限の少なくとも一方)を入れてください。ガントチャートに表示するために使います。'; return; }
-  if(start && due && start > due){ $('taskErr').textContent = '始まりの日が、期限より後になっています。日付を確かめてください。'; return; }
+  if(rep){
+    if(rep.type==='weekly' && !rep.weekdays.length){ $('taskErr').textContent = 'くり返す曜日を選んでください。'; return; }
+    if(rep.type==='dates'){
+      if(!rep.dates.length){ $('taskErr').textContent = '「この日を追加」で、日付を1つ以上入れてください。'; return; }
+      start = rep.dates[0]; due = rep.dates[rep.dates.length-1];   // 選んだ日の最初〜最後を期間にする
+    } else {
+      if(start && due && start > due){ $('taskErr').textContent = 'くり返す期間の始まりの日が、終わりの日より後になっています。日付を確かめてください。'; return; }
+      // 空のままなら年度の初めから終わりまで(あとで年度を変えても分かるように、日付を入れておく)
+      const fr = fyRange();
+      if(!start) start = numToYmd(fr.start);
+      if(!due) due = numToYmd(fr.end);
+    }
+    if(!occurrences({ repeat:rep, start, due }).length){ $('taskErr').textContent = 'この決まりでは、1回もありません。曜日・日にち・期間・お休みの月を確かめてください。'; return; }
+  } else {
+    if(!start && !due){ $('taskErr').textContent = '期間(始まりか期限の少なくとも一方)を入れてください。ガントチャートに表示するために使います。'; return; }
+    if(start && due && start > due){ $('taskErr').textContent = '始まりの日が、期限より後になっています。日付を確かめてください。'; return; }
+  }
   let t = editingTaskId ? state.tasks.find(x=>x.id===editingTaskId) : null;
   if(!t){ t = { id:newId('t'), order: state.tasks.length }; state.tasks.push(t); }
   Object.assign(t, {
@@ -1192,7 +1477,14 @@ $('tOk').addEventListener('click', ()=>{
     status: (document.querySelector('input[name=tSt]:checked')||{}).value || '未着手',
     workload: Number((document.querySelector('input[name=tWl]:checked')||{}).value) || 2,
     memo: $('tMemo').value, caution: $('tCaution').value.trim(), repeatYearly: $('tRepeat').checked,
+    repeat: rep,
   });
+  if(rep){
+    // 済んだ回は、今の決まりにある回だけ残す(曜日などを変えて、なくなった回の印は消す)
+    const occ = new Set(occurrences(t));
+    t.doneDates = [...modalDone].filter(d=>occ.has(d)).sort();
+    t.status = statusOf(t);
+  } else t.doneDates = [];
   if(t.projectId) collapsed.delete(t.projectId);
   closeOverlay('taskOverlay');
   markDirty(); renderAll();
@@ -1671,7 +1963,20 @@ function makeSample(){
       s.tasks.push({ id:'t'+pi+'_'+ti, projectId:pid, name:tn, assignees:asg.map(i=>'m'+i), start:a, due:b, status:st, workload:wl, memo:'', caution:cau, repeatYearly:true, order:ti });
     });
   });
-  s.tasks.push({ id:'tx', projectId:'', name:'教務だよりの発行(月1回)', assignees:['m2'], start:d(4,1), due:d(3,20), status:'作業中', workload:1, memo:'毎月20日ごろ発行', caution:'', repeatYearly:true, order:99 });
+  // くり返しの仕事の見本(毎月・毎週・日付を選ぶ)。今日より前の回は「済」にする。
+  // ただし毎週の仕事は、いちばん近い過ぎた回を「まだ」にして、期限切れの例にする。
+  const rep = (id, name, asg, wl, repeat, memo) => {
+    const t = { id, projectId:'', name, assignees:asg, start:d(4,1), due:d(3,31), status:'未着手', workload:wl, memo, caution:'', repeatYearly:true, order:90+s.tasks.length, repeat, doneDates:[] };
+    if(repeat.type==='dates'){ t.start = repeat.dates[0]; t.due = repeat.dates[repeat.dates.length-1]; }
+    t.doneDates = occurrences(t).filter(x=>x<today);
+    return t;
+  };
+  const tx = rep('tx', '教務だよりの発行', ['m2'], 1, { type:'monthDay', day:20, skipMonths:[8] }, '学年の行事予定を前の週までに集める');
+  const ty = rep('ty', '週予定表の作成・配布', ['m4'], 1, { type:'weekly', weekdays:[5], skipMonths:[8] }, '金曜の朝の打合せで配る');
+  const past = occurrences(ty).filter(x=>x<today);
+  if(past.length) ty.doneDates = past.slice(0, -1);
+  const tz = rep('tz', '避難訓練の計画', ['m3'], 2, { type:'dates', dates:[d(4,24), d(9,1), d(1,16)] }, '消防署への連絡を2週間前までに');
+  [tx, ty, tz].forEach(t=>{ t.status = statusOf(t); s.tasks.push(t); });
   // 編集の記録の見本(架空の名前)。「編集の記録」ボタンを見本でも試せるように、今日から数日前の記録を作る
   const ago = (days, h, m) => { const t = new Date(); t.setDate(t.getDate()-days); t.setHours(h, m, 0, 0); return t.toISOString(); };
   s.editLog = [
@@ -1696,7 +2001,8 @@ const GUIDE = [
   ['データファイルを開く・作る', '<ol><li>いつも使うときは、上の「<span class="kbd">開く</span>」を押し、校務共有サーバーに置いてある分掌・学年のデータファイル(.json)を選びます。</li><li>はじめて使う分掌・学年は「<span class="kbd">新規作成</span>」で作ります。保存する場所は校務共有サーバーのフォルダにしてください。</li><li>次からは、開くと前回のファイルが表示されます。</li></ol>'],
   ['入力するとき(名前の入力)', '<ol><li>上の「<span class="kbd">✏ 編集する</span>」を押します。</li><li><b>お名前を入れて</b>「編集を始める」を押します。名前が空のままでは始められません。入れた名前は次から最初から入っています。</li><li>編集中は、ほかの先生の画面に「○○先生が編集中」と出ます。<b>編集できるのは1人ずつ</b>です。</li><li>入力した内容は自動で保存されます。終わったら必ず「<span class="kbd">編集を終える</span>」を押してください。</li></ol>'],
   ['ガントチャートと仕事の一覧', '<ul><li>「<span class="kbd">＋ プロジェクトを追加</span>」「<span class="kbd">＋ 小業務を追加</span>」で入力します(編集中だけ出ます)。</li><li>名前や横棒を押すと、内容・注意点を見たり直したりできます。</li><li>「担当者」で先生をしぼる、「完了を隠す」で終わった仕事を隠す、「月ごと・週ごと・日ごと」で目盛りを変えられます。</li><li>「仕事の一覧」タブでは、列の見出しを押すと並べ替えます。</li></ul>'],
-  ['仕事量の表と印刷', '<ul><li>「<span class="kbd">仕事量の表を表示</span>」に印を付けると、ガントチャートの下に先生ごと・月ごとの仕事量が出ます。色が濃いほど多い月です。</li><li>「<span class="kbd">🖨 印刷</span>」で、用紙(A3横・A4横)、期間、担当者、プロジェクトを選んで印刷します。PDF にもできます。</li></ul>'],
+  ['毎週・毎月の仕事(くり返し)', '<ul><li>小業務の入力画面の「<span class="kbd">くり返し</span>」で、「毎週(曜日)」「毎月○日」「毎月第○○曜日」「日付を自分で選ぶ」を選べます。夏休みなど、お休みの月も選べます。</li><li>ガントチャートには、1行に各回の ○ が並びます(🔁 の印)。済んだ回は灰色、過ぎてまだ済んでいない回は赤になります。</li><li>編集中に ○ を押すと「済」と「まだ」が切り替わります。入力画面の「済んだ回」でも印を付けられます。</li><li>進み具合は、済んだ回の数から自動で決まります。仕事量の表では、その月の回数分を数えます。</li></ul>'],
+  ['仕事量の表と印刷','<ul><li>「<span class="kbd">仕事量の表を表示</span>」に印を付けると、ガントチャートの下に先生ごと・月ごとの仕事量が出ます。色が濃いほど多い月です。</li><li>「<span class="kbd">🖨 印刷</span>」で、用紙(A3横・A4横)、期間、担当者、プロジェクトを選んで印刷します。PDF にもできます。</li></ul>'],
   ['編集の記録とバックアップ', '<ul><li>上の「<span class="kbd">編集の記録</span>」で、<b>だれが・いつ編集したか</b>を新しい順に見られます(何を変えたかは残りません)。</li><li>「設定」タブの「<span class="kbd">データを書き出す(バックアップ)</span>」で、日付入りの控えを作れます。学期の終わりなどに控えておいてください。</li><li>困ったときは README(使い方の説明書)の「困ったとき」を見てください。</li></ul>'],
 ];
 let guidePage = 0;
