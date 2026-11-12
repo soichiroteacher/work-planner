@@ -138,6 +138,30 @@ table.list td.nowrap{ white-space:nowrap; }
 .proj-row .pbtns{ display:inline-flex; gap:6px; margin-left:14px; font-weight:normal; vertical-align:middle; }
 .proj-row .pbtns button{ font-size:13px; padding:2px 10px; }
 
+/* ===== 定例会レジュメ ===== */
+.meeting{ max-width:1000px; }
+.m-head{ display:flex; flex-wrap:wrap; gap:10px 20px; align-items:center; font-size:16px; }
+.m-sec{ border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin:10px 0; }
+.m-sec h3{ font-size:16px; margin:0 0 6px; color:var(--accent); }
+.m-sec .hint{ margin:0 0 6px; }
+table.m-tbl{ min-width:0; }
+table.m-tbl th{ position:static; cursor:default; }
+table.m-tbl td{ font-size:15px; }
+/* レジュメの印刷(A4縦)。文字は配布物として読みやすい大きさにする */
+.r-root{ color:#000; font-size:12.5px; line-height:1.5; }
+.r-title{ display:flex; justify-content:space-between; align-items:baseline; border-bottom:2px solid #000; padding-bottom:3px; }
+.r-title h1{ font-size:20px; margin:0; }
+.r-title span{ font-size:15px; font-weight:bold; }
+.r-sub{ margin:4px 0 0; font-size:12px; }
+.r-root h2{ font-size:14px; margin:12px 0 4px; padding-left:6px; border-left:5px solid #000; break-after:avoid; }
+table.r-tbl{ border-collapse:collapse; width:100%; }
+table.r-tbl th, table.r-tbl td{ border:1px solid #777; padding:2px 5px; text-align:left; vertical-align:top; }
+table.r-tbl th{ background:#eee; font-size:11.5px; }
+table.r-tbl tr{ break-inside:avoid; }
+.r-none{ margin:0; color:#444; }
+.r-text{ white-space:pre-wrap; border:1px solid #777; padding:4px 6px; }
+.r-lines div{ height:24px; border-bottom:1px solid #999; }
+
 /* ===== 設定 ===== */
 .settings{ max-width:760px; }
 .settings section{ border:1px solid var(--line); border-radius:8px; padding:14px 18px; margin-bottom:14px; }
@@ -267,6 +291,7 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
 <nav class="tabs">
   <button data-tab="gantt" class="active">ガントチャート</button>
   <button data-tab="list">仕事の一覧</button>
+  <button data-tab="meeting">定例会レジュメ</button>
   <button data-tab="settings">設定</button>
 </nav>
 
@@ -326,6 +351,18 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
       <span class="hint">列の見出しを押すと並べ替えます(もう一度押すと逆順)。</span>
     </div>
     <div class="tbl-wrap"><table class="list" id="listTable"></table></div>
+  </section>
+
+  <!-- ===== 定例会レジュメ ===== -->
+  <section id="tab-meeting" hidden>
+    <div class="toolbar">
+      <select id="mSelect" style="font-size:16px"></select>
+      <button id="mNew" class="edit-only primary">＋ 新しいレジュメを作る</button>
+      <button id="mPrint">🖨 印刷(A4縦)</button>
+      <button id="mReimport" class="edit-only">仕事を取り込み直す</button>
+      <button id="mDelete" class="edit-only danger">このレジュメを削除</button>
+    </div>
+    <div id="mBody" class="meeting"></div>
   </section>
 
   <!-- ===== 設定 ===== -->
@@ -534,6 +571,10 @@ const CONFIG = {
   scopeTypes: ['分掌', '学年', '学校全体'],
   defaultWorkloadLevels: [ { value:1, label:'軽い' }, { value:2, label:'ふつう' }, { value:3, label:'重い' } ],
   weekdays: ['日','月','火','水','木','金','土'],
+  // 定例会レジュメ: 次回の会議を、何日後とするか(ふつうは毎週なので7)
+  meetingIntervalDays: 7,
+  // 定例会レジュメの「近づいている行事」に、会議の日から何日先までの当日を載せるか
+  meetingEventDays: 31,
 };
 const FORMAT_VERSION = 1;
 const STATUS_CLASS = { '未着手':'st-todo', '作業中':'st-doing', '完了':'st-done' };
@@ -554,7 +595,7 @@ const EDIT_LOG_MAX = 200;  // 編集の記録を残す件数(共通ルール)
 
 // 画面の表示の好み(人ごと。ブラウザに覚えておくだけで、データファイルには入れない)
 const view = loadPref('wp.view', { tab:'gantt', scale:'week', gFilter:'', gHideDone:false, lGroup:true, lHideDone:false, lFilter:'', sortKey:'start', sortDir:1,
-  showLoad:false, prPaper:'A3', prLoad:true, prFit:false });
+  showLoad:false, prPaper:'A3', prLoad:true, prFit:false, meetingId:'' });
 const collapsed = new Set(loadPref('wp.collapsed', []));
 
 function loadPref(key, def){
@@ -724,13 +765,20 @@ function normalizeState(o){
     t.workload = Number(t.workload) || 2;
     t.repeat = normalizeRepeat(t.repeat);                                    // くり返しの決まり(なければ null)
     t.doneDates = (Array.isArray(t.doneDates)?t.doneDates:[]).filter(isYmd); // くり返しの仕事の、済んだ回の日付
+    t.doneAt = isYmd(t.doneAt) ? t.doneAt : '';                             // 完了にした日(定例会レジュメの「報告」に使う)
     return t;
   });
-  if(!Array.isArray(o.meetings)) o.meetings = [];
+  o.meetings = (Array.isArray(o.meetings)?o.meetings:[]).filter(m=>m && isYmd(m.date)).map(normalizeMeeting);
   if(!o.editLock || typeof o.editLock!=='object') o.editLock = { active:false, since:null, by:'', session:'' };
   // editLog のない古いファイルは、空の記録として読む
   o.editLog = (Array.isArray(o.editLog)?o.editLog:[]).filter(e=>e && e.start).map(e=>({ by:String(e.by||''), start:String(e.start), end:String(e.end||e.start) }));
   return o;
+}
+// 進み具合を変える。完了にした日を doneAt に残す(定例会レジュメの「報告」で、期限より早く終わった仕事も拾えるように)
+function applyStatus(t, st){
+  if(st==='完了' && t.status!=='完了') t.doneAt = todayYmd();
+  if(st!=='完了') t.doneAt = '';
+  t.status = st;
 }
 function sortedProjects(){ return state.projects.slice().sort((a,b)=>a.order-b.order); }
 // 小業務の期間(始まりがなければ期限の日だけ、期限がなければ始まりの日だけとみなす)
@@ -785,6 +833,7 @@ function renderAll(){
   renderFilters();
   if(view.tab==='gantt') renderGantt();
   if(view.tab==='list') renderList();
+  if(view.tab==='meeting') renderMeeting();
   if(view.tab==='settings') renderSettings();
 }
 function renderTop(){
@@ -1278,6 +1327,8 @@ $('prOk').addEventListener('click', ()=>{
 // 「印刷」ボタンを使わずに Ctrl+P で印刷したときも、ガントチャート全体(前回の用紙)を印刷する
 window.addEventListener('beforeprint', ()=>{
   if(printBuilt || !state) return;
+  // 定例会レジュメのタブを開いているときは、表示中のレジュメを印刷する
+  if(view.tab==='meeting'){ const m = currentMeeting(); if(m){ buildResumePrint(m); return; } }
   const all = new Set(state.projects.map(p=>p.id)); all.add('');
   const { start, end } = fyRange();
   buildPrint({ paper:view.prPaper, range:{ a:start, b:end }, member:view.gFilter, projects:all,
@@ -1378,7 +1429,7 @@ $('listTable').addEventListener('change', e=>{
   const sel = e.target.closest('select[data-status]');
   if(!sel || !editing) return;
   const t = state.tasks.find(t=>t.id===sel.dataset.status);
-  if(t){ t.status = sel.value; markDirty(); renderList(); }
+  if(t){ applyStatus(t, sel.value); markDirty(); renderList(); }
 });
 $('lGroup').addEventListener('change', e=>{ view.lGroup = e.target.checked; if(view.lGroup && view.sortKey==='project') view.sortKey='start'; savePref(); renderList(); });
 $('lHideDone').addEventListener('change', e=>{ view.lHideDone = e.target.checked; savePref(); renderList(); });
@@ -1547,10 +1598,10 @@ $('tOk').addEventListener('click', ()=>{
   }
   let t = editingTaskId ? state.tasks.find(x=>x.id===editingTaskId) : null;
   if(!t){ t = { id:newId('t'), order: state.tasks.length }; state.tasks.push(t); }
+  applyStatus(t, (document.querySelector('input[name=tSt]:checked')||{}).value || '未着手');
   Object.assign(t, {
     projectId: $('tProject').value, name, start, due,
     assignees: [...document.querySelectorAll('input[name=tAsg]:checked')].map(i=>i.value),
-    status: (document.querySelector('input[name=tSt]:checked')||{}).value || '未着手',
     workload: Number((document.querySelector('input[name=tWl]:checked')||{}).value) || 2,
     memo: $('tMemo').value, caution: $('tCaution').value.trim(), repeatYearly: $('tRepeat').checked,
     repeat: rep,
@@ -1651,6 +1702,238 @@ $('gAddProject').addEventListener('click', ()=>openProjectModal(null));
 $('lAddProject').addEventListener('click', ()=>openProjectModal(null));
 $('gAddTask').addEventListener('click', ()=>openTaskModal(null));
 $('lAddTask').addEventListener('click', ()=>openTaskModal(null));
+
+//////////////////////// 定例会レジュメ ////////////////////////
+// 会議の日付を選ぶと、ガントチャートの仕事から次を自動で取り込む(「仕事を取り込み直す」で作り直せる):
+//   reported 報告   … 前回の会議の翌日〜今回の会議の日に完了した仕事(doneAt。なければ期限)、済んだくり返しの回
+//   confirm  確認   … 今回〜次回の会議の日に期限が来る・始まる、まだ終わっていない仕事、くり返しのまだの回
+//   overdue  要相談 … 今回の会議の日より前が期限で、まだ終わっていない仕事、過ぎて済んでいないくり返しの回
+//   events   行事   … 会議の日から CONFIG.meetingEventDays 日先までに当日が来るプロジェクト
+// 取り込んだ行は、その時点の写し(snapshot)として会議ごとに保存する(あとで仕事が変わっても、過去のレジュメは変わらない)。
+// 行の形: { text, who, when, note, manual }  manual は手で足した行(取り込み直しても消さない)
+// 会議の形: { id, date, nextDate, prevDecisions, reported:[], confirm:[], overdue:[], events:[], discussion, notices, decisions }
+const MEETING_SECTIONS = [
+  { key:'reported', title:'報告(前回から今回までに完了した仕事)', empty:'完了した仕事はありません。' },
+  { key:'confirm',  title:'確認(次回までに期限が来る・始まる仕事)', empty:'次回までに期限が来る仕事はありません。' },
+  { key:'overdue',  title:'要相談(期限を過ぎて終わっていない仕事)', empty:'期限を過ぎた仕事はありません。' },
+  { key:'events',   title:'近づいている行事(当日)', empty:'近づいている行事はありません。' },
+];
+function normalizeRow(r){ return { text:String(r&&r.text||''), who:String(r&&r.who||''), when:String(r&&r.when||''), note:String(r&&r.note||''), manual:!!(r&&r.manual) }; }
+function normalizeMeeting(m){
+  const o = { id: m.id || newId('g'), date: m.date, nextDate: isYmd(m.nextDate) ? m.nextDate : numToYmd(dayNum(m.date)+CONFIG.meetingIntervalDays),
+    prevDecisions:String(m.prevDecisions||''), discussion:String(m.discussion||''), notices:String(m.notices||''), decisions:String(m.decisions||'') };
+  MEETING_SECTIONS.forEach(s=> o[s.key] = (Array.isArray(m[s.key])?m[s.key]:[]).filter(r=>r && typeof r==='object').map(normalizeRow));
+  return o;
+}
+function sortedMeetings(){ return state.meetings.slice().sort((a,b)=>b.date.localeCompare(a.date)); }   // 新しい順
+// この会議の前の会議(なければ null)
+function prevMeeting(m){ return state.meetings.filter(x=>x.date < m.date).sort((a,b)=>b.date.localeCompare(a.date))[0] || null; }
+// 「前回」の日付。前の会議がなければ、間隔の日数だけ前の日とみなす
+function prevMeetingDate(m){ const p = prevMeeting(m); return p ? p.date : numToYmd(dayNum(m.date) - CONFIG.meetingIntervalDays); }
+// 日付の短い並び(多いときは最後の数個だけ。例: 10/30・11/6・11/13)
+function datesText(ds, max){ max = max || 5; const s = ds.slice(-max).map(fmtMD).join('・'); return (ds.length>max ? '…' : '') + s; }
+
+// ガントチャートの仕事から、4つの欄の行を作る
+function collectMeeting(date, nextDate, prevDate){
+  const out = { reported:[], confirm:[], overdue:[], events:[] };
+  const projName = t => { const p = state.projects.find(p=>p.id===t.projectId); return p ? p.name : ''; };
+  const order = new Map(sortedProjects().map((p,i)=>[p.id,i]));
+  const tasks = state.tasks.slice().sort((a,b)=> (order.has(a.projectId)?order.get(a.projectId):999) - (order.has(b.projectId)?order.get(b.projectId):999) || taskDateKey(a).localeCompare(taskDateKey(b)));
+  tasks.forEach(t=>{
+    const text = (projName(t) ? projName(t)+'：' : '') + (t.name || '(名前なし)') + (t.repeat ? '(' + repeatText(t.repeat) + ')' : '');
+    const who = namesOf(t.assignees);
+    const row = when => ({ text, who, when, note:'', manual:false });
+    if(t.repeat){
+      const done = new Set(t.doneDates), occ = occurrences(t);
+      const rep = occ.filter(d=>d>prevDate && d<=date && done.has(d));
+      const od  = occ.filter(d=>d<date && !done.has(d));
+      const up  = occ.filter(d=>d>=date && d<=nextDate && !done.has(d));
+      if(rep.length) out.reported.push(row(datesText(rep)+' 済'));
+      if(od.length)  out.overdue.push(row(datesText(od)+' まだ'));
+      if(up.length)  out.confirm.push(row(datesText(up)));
+      return;
+    }
+    if(t.status==='完了'){
+      const d = t.doneAt || t.due;
+      if(d && d>prevDate && d<=date) out.reported.push(row(t.doneAt ? fmtMDW(t.doneAt)+' 完了' : '期限 '+fmtMDW(t.due)));
+      return;
+    }
+    if(t.due && t.due < date) out.overdue.push(row('期限 '+fmtMDW(t.due)+'('+t.status+')'));
+    else if(t.due && t.due <= nextDate) out.confirm.push(row('期限 '+fmtMDW(t.due)+(t.status==='作業中'?'(作業中)':'')));
+    else if(t.start && t.start>=date && t.start<=nextDate) out.confirm.push(row('始まり '+fmtMDW(t.start)));
+  });
+  const until = dayNum(date) + CONFIG.meetingEventDays;
+  sortedProjects().forEach(p=>{
+    const ev = eventSpan(p);
+    if(ev && ev.b>=dayNum(date) && ev.a<=until) out.events.push({ text:p.name, who:namesOf(p.owners), when:eventText(p).replace(/^当日 /,''), note:'', manual:false });
+  });
+  out.events.sort((a,b)=>{ const ea = eventSpan(state.projects.find(p=>p.name===a.text)), eb = eventSpan(state.projects.find(p=>p.name===b.text)); return (ea?ea.a:0)-(eb?eb.a:0); });
+  return out;
+}
+// 取り込み直す。手で足した行は残し、同じ内容の行に書いたメモも引き継ぐ
+function importIntoMeeting(m){
+  const got = collectMeeting(m.date, m.nextDate, prevMeetingDate(m));
+  MEETING_SECTIONS.forEach(s=>{
+    const notes = new Map(m[s.key].filter(r=>!r.manual && r.note).map(r=>[r.text, r.note]));
+    m[s.key] = got[s.key].map(r=>({ ...r, note: notes.get(r.text) || '' })).concat(m[s.key].filter(r=>r.manual));
+  });
+  if(!m.prevDecisions){ const p = prevMeeting(m); if(p) m.prevDecisions = p.decisions; }
+}
+// 次の会議の日(今日以降で、設定の「定例会の曜日」にあたる最初の日。その日にもうレジュメがあれば、その次の週)
+function nextMeetingDay(){
+  let n = dayNum(todayYmd());
+  while(weekdayOf(n)!==state.meta.meetingWeekday) n++;
+  while(state.meetings.some(m=>m.date===numToYmd(n))) n += CONFIG.meetingIntervalDays;
+  return numToYmd(n);
+}
+function newMeeting(date){
+  const m = normalizeMeeting({ date, nextDate: numToYmd(dayNum(date)+CONFIG.meetingIntervalDays) });
+  state.meetings.push(m);
+  importIntoMeeting(m);
+  return m;
+}
+function currentMeeting(){
+  if(!state.meetings.length) return null;
+  return state.meetings.find(m=>m.id===view.meetingId) || sortedMeetings()[0];
+}
+
+function renderMeeting(){
+  const list = sortedMeetings(), m = currentMeeting();
+  $('mSelect').innerHTML = list.map(x=>'<option value="'+esc(x.id)+'">'+fmtMDW(x.date).replace(/^/, x.date.slice(0,4)+'/')+' の定例会</option>').join('');
+  $('mSelect').hidden = !list.length;
+  if(m) $('mSelect').value = m.id;
+  ['mPrint'].forEach(id=> $(id).disabled = !m);
+  $('mReimport').hidden = !editing || !m;
+  $('mDelete').hidden = !editing || !m;
+  if(!m){
+    $('mBody').innerHTML = '<div class="empty-msg">まだレジュメがありません。'+(editing ? '「＋ 新しいレジュメを作る」を押してください。' : '作るときは、上の「編集する」を押してから「＋ 新しいレジュメを作る」を押してください。')+'</div>';
+    return;
+  }
+  const ro = editing ? '' : ' disabled';
+  const prev = prevMeeting(m);
+  let h = '<div class="m-head">'
+    + '<label>会議の日 <input type="date" id="mDate" value="'+m.date+'"'+ro+'></label>'
+    + '<label>次回 <input type="date" id="mNext" value="'+m.nextDate+'"'+ro+'></label>'
+    + '<span class="hint">前回: '+(prev ? fmtMDW(prev.date) : '(前のレジュメなし。'+fmtMDW(prevMeetingDate(m))+'から数えます)')+'</span>'
+    + '</div>'
+    + '<p class="hint">「報告」「確認」「要相談」「近づいている行事」は、ガントチャートの仕事から自動で取り込みます。'+(editing ? '仕事の進み具合を直したあとや、日付を変えたあとは「仕事を取り込み直す」を押してください(手で足した行とメモは残ります)。' : '')+'</p>';
+  h += mText('前回の決定事項', 'prevDecisions', m, '前の会のレジュメの「決定事項」が写されます。');
+  MEETING_SECTIONS.forEach(s=>{
+    h += '<section class="m-sec"><h3>'+esc(s.title)+'</h3>';
+    if(!m[s.key].length) h += '<p class="hint">'+esc(s.empty)+'</p>';
+    else {
+      h += '<table class="list m-tbl"><thead><tr><th>内容</th><th style="width:140px">担当</th><th style="width:190px">日付・状況</th><th>メモ</th>'+(editing?'<th style="width:44px"></th>':'')+'</tr></thead><tbody>';
+      m[s.key].forEach((r,i)=>{
+        const cell = (k, w) => editing && (r.manual || k==='note')
+          ? '<td><input type="text" data-row="'+s.key+'|'+i+'|'+k+'" value="'+esc(r[k])+'" style="width:100%"></td>'
+          : '<td>'+esc(r[k])+'</td>';
+        h += '<tr>'+cell('text')+cell('who')+cell('when')+cell('note')+(editing?'<td><button data-delrow="'+s.key+'|'+i+'" title="この行を消す">✕</button></td>':'')+'</tr>';
+      });
+      h += '</tbody></table>';
+    }
+    if(editing) h += '<button data-addrow="'+s.key+'" style="margin-top:6px">＋ 行を書き足す</button>';
+    h += '</section>';
+  });
+  h += mText('協議事項', 'discussion', m, '話し合いたいことを書きます。');
+  h += mText('連絡事項', 'notices', m, '');
+  h += mText('決定事項(会議で決まったこと)', 'decisions', m, '会議のあとに書きます。次の会のレジュメの「前回の決定事項」に写されます。');
+  $('mBody').innerHTML = h;
+}
+function mText(title, key, m, hint){
+  return '<section class="m-sec"><h3>'+esc(title)+'</h3>'+(hint ? '<p class="hint">'+esc(hint)+'</p>' : '')
+    + '<textarea data-mf="'+key+'" rows="4" style="width:100%"'+(editing?'':' disabled')+'>'+esc(m[key])+'</textarea></section>';
+}
+// 入力したらすぐデータに入れて自動保存する(描き直すと入力中の文字の場所がずれるので、描き直さない)
+$('mBody').addEventListener('input', e=>{
+  if(!editing) return;
+  const m = currentMeeting(); if(!m) return;
+  const f = e.target.closest('[data-mf]');
+  if(f){ m[f.dataset.mf] = f.value; markDirty(); return; }
+  const r = e.target.closest('[data-row]');
+  if(r){ const [sec, i, k] = r.dataset.row.split('|'); m[sec][Number(i)][k] = r.value; markDirty(); }
+});
+$('mBody').addEventListener('change', e=>{
+  if(!editing) return;
+  const m = currentMeeting(); if(!m) return;
+  if(e.target.id==='mDate' || e.target.id==='mNext'){
+    const d = $('mDate').value, n = $('mNext').value;
+    if(!isYmd(d) || !isYmd(n)){ alert('日付を入れてください。'); renderMeeting(); return; }
+    if(n <= d){ alert('次回の日は、会議の日より後にしてください。'); renderMeeting(); return; }
+    if(state.meetings.some(x=>x!==m && x.date===d)){ alert(fmtMDW(d)+'の定例会のレジュメは、もうあります。上の一覧から選んでください。'); renderMeeting(); return; }
+    m.date = d; m.nextDate = n;
+    if(confirm('日付を変えました。この日付で、仕事を取り込み直しますか？\n(手で足した行とメモは残ります)')) importIntoMeeting(m);
+    markDirty(); renderMeeting();
+  }
+});
+$('mBody').addEventListener('click', e=>{
+  if(!editing) return;
+  const m = currentMeeting(); if(!m) return;
+  const del = e.target.closest('[data-delrow]');
+  if(del){
+    const [sec, i] = del.dataset.delrow.split('|'); const r = m[sec][Number(i)];
+    if(!confirm('「'+(r.text||'(空の行)')+'」の行を消します。よろしいですか？\n(自動で取り込んだ行は、「仕事を取り込み直す」でまた出てきます)')) return;
+    m[sec].splice(Number(i), 1); markDirty(); renderMeeting(); return;
+  }
+  const add = e.target.closest('[data-addrow]');
+  if(add){
+    m[add.dataset.addrow].push({ text:'', who:'', when:'', note:'', manual:true });
+    markDirty(); renderMeeting();
+    const ins = document.querySelectorAll('[data-row^="'+add.dataset.addrow+'|"][data-row$="|text"]');
+    if(ins.length) ins[ins.length-1].focus();
+  }
+});
+$('mSelect').addEventListener('change', e=>{ view.meetingId = e.target.value; savePref(); renderMeeting(); });
+$('mNew').addEventListener('click', ()=>{
+  if(!editing) return;
+  const m = newMeeting(nextMeetingDay());
+  view.meetingId = m.id; savePref();
+  markDirty(); renderMeeting();
+});
+$('mReimport').addEventListener('click', ()=>{
+  const m = currentMeeting(); if(!m || !editing) return;
+  if(!confirm('自動で取り込んだ行を、今の仕事の状態で作り直します。\n手で足した行と、メモはそのまま残ります。よろしいですか？')) return;
+  importIntoMeeting(m); markDirty(); renderMeeting();
+});
+$('mDelete').addEventListener('click', ()=>{
+  const m = currentMeeting(); if(!m || !editing) return;
+  if(!confirm(fmtMDW(m.date)+'の定例会のレジュメを削除します。元に戻せません。よろしいですか？')) return;
+  state.meetings = state.meetings.filter(x=>x!==m);
+  view.meetingId = ''; savePref();
+  markDirty(); renderMeeting();
+});
+$('mPrint').addEventListener('click', ()=>{
+  const m = currentMeeting(); if(!m) return;
+  buildResumePrint(m);
+  setTimeout(()=>window.print(), 50);
+});
+// レジュメの印刷(A4縦)。決定事項が空なら、手で書けるように罫線の欄を出す
+function buildResumePrint(m){
+  const sec = s => {
+    const rows = m[s.key];
+    return '<h2>'+esc(s.title)+'</h2>' + (rows.length
+      ? '<table class="r-tbl"><thead><tr><th>内容</th><th style="width:18%">担当</th><th style="width:22%">日付・状況</th><th style="width:24%">メモ</th></tr></thead><tbody>'
+        + rows.map(r=>'<tr><td>'+esc(r.text)+'</td><td>'+esc(r.who)+'</td><td>'+esc(r.when)+'</td><td>'+esc(r.note)+'</td></tr>').join('') + '</tbody></table>'
+      : '<p class="r-none">'+esc(s.empty)+'</p>');
+  };
+  const txt = (title, v, lines) => '<h2>'+esc(title)+'</h2>' + (v.trim()
+    ? '<div class="r-text">'+esc(v)+'</div>'
+    : '<div class="r-lines">'+'<div></div>'.repeat(lines)+'</div>');
+  const prev = prevMeeting(m);
+  const html = '<div class="r-root">'
+    + '<div class="r-title"><h1>'+esc(state.meta.scopeName||'')+'　定例会 レジュメ</h1><span>'+m.date.slice(0,4)+'年'+fmtMDW(m.date).replace('/','月').replace('(','日(')+'</span></div>'
+    + '<p class="r-sub">前回 '+(prev ? fmtMDW(prev.date) : '―')+'　次回 '+fmtMDW(m.nextDate)+'</p>'
+    + txt('前回の決定事項', m.prevDecisions, 2)
+    + MEETING_SECTIONS.map(sec).join('')
+    + txt('協議事項', m.discussion, 3)
+    + txt('連絡事項', m.notices, 2)
+    + txt('決定事項', m.decisions, 4)
+    + '<p class="r-sub" style="margin-top:10px">次回の定例会　'+fmtMDW(m.nextDate)+'</p>'
+    + '</div>';
+  $('printArea').innerHTML = html;
+  $('pageStyle').textContent = '@page{ size:A4 portrait; margin:12mm; }';
+  document.body.classList.add('printing');
+  printBuilt = true;
+}
 
 //////////////////////// 設定 ////////////////////////
 function renderSettings(){
@@ -2051,7 +2334,7 @@ function makeSample(){
     tasks.forEach(([tn, asg, a, b, wl, cau], ti)=>{
       let st = auto(a, b);
       if(tn==='アンケートの集計' && st==='完了') st = '作業中'; // 期限切れの例
-      s.tasks.push({ id:'t'+pi+'_'+ti, projectId:pid, name:tn, assignees:asg.map(i=>'m'+i), start:a, due:b, status:st, workload:wl, memo:'', caution:cau, repeatYearly:true, order:ti });
+      s.tasks.push({ id:'t'+pi+'_'+ti, projectId:pid, name:tn, assignees:asg.map(i=>'m'+i), start:a, due:b, status:st, doneAt: st==='完了' ? b : '', workload:wl, memo:'', caution:cau, repeatYearly:true, order:ti });
     });
   });
   // プロジェクトの期間と当日の見本:
@@ -2063,6 +2346,12 @@ function makeSample(){
   Object.assign(pj('学校評価'), { start:d(8,20), end:d(10,23) });
   s.projects.push({ id:'p9', name:'合唱コンクール', owners:['m3'], memo:'小業務はこれから分ける', caution:'', repeatYearly:true, order:s.projects.length,
     start:d(9,1), end:d(10,31), eventStart:d(10,24), eventEnd:'' });
+  // 定例会レジュメの見本用に、今日の前後の日付の仕事を1つ入れる(いつ見本を開いても「報告」「確認」「行事」に何か出るように)
+  const rel = k => numToYmd(dayNum(today) + k);
+  s.projects.push({ id:'p10', name:'校内研究授業', owners:['m1'], memo:'', caution:'', repeatYearly:true, order:s.projects.length,
+    start:'', end:'', eventStart:rel(16), eventEnd:'' });
+  s.tasks.push({ id:'tr0', projectId:'p10', name:'指導案の検討', assignees:['m1'], start:rel(-14), due:rel(-2), status:'完了', doneAt:rel(-2), workload:2, memo:'', caution:'', repeatYearly:true, order:0 });
+  s.tasks.push({ id:'tr1', projectId:'p10', name:'参観の案内の配布', assignees:['m0','m1'], start:rel(-1), due:rel(5), status:'作業中', doneAt:'', workload:1, memo:'', caution:'', repeatYearly:true, order:1 });
   // くり返しの仕事の見本(毎月・毎週・日付を選ぶ)。今日より前の回は「済」にする。
   // ただし毎週の仕事は、いちばん近い過ぎた回を「まだ」にして、期限切れの例にする。
   const rep = (id, name, asg, wl, repeat, memo) => {
@@ -2087,8 +2376,21 @@ function makeSample(){
   ];
   return s;
 }
+// 定例会レジュメの見本。取り込みの関数が今のデータ(state)を使うので、makeSample のあと state に入れてから作る。
+// 今日より前の、定例会の曜日の会を2回分作る(前の会の決定事項が、あとの会に写るようにする)
+function addSampleMeetings(){
+  let n = dayNum(todayYmd()) - 1;
+  while(weekdayOf(n)!==state.meta.meetingWeekday) n--;
+  const d2 = numToYmd(n), d1 = numToYmd(n - CONFIG.meetingIntervalDays);
+  const m1 = newMeeting(d1);
+  Object.assign(m1, { discussion:'・2学期の通知表の様式について\n・学校評価アンケートの集計の分担', notices:'・教務だよりの原稿は20日までに鈴木先生へ',
+    decisions:'・通知表の様式は昨年度と同じにする\n・アンケートの集計は伊藤先生と山田先生で分ける' });
+  const m2 = newMeeting(d2);
+  Object.assign(m2, { discussion:'・次年度の年間行事予定の案の進め方', notices:'・合唱コンクールの会場の下見は来週' });
+  m2.confirm.forEach(r=>{ if(r.text.includes('年間行事予定')) r.note = '各学年の行事を11月末までに集める'; });
+}
 function showSample(){
-  state = makeSample(); fileHandle = null; isSample = true; editing = false; dirty = false; myLogStart = null;
+  state = makeSample(); addSampleMeetings(); fileHandle = null; isSample = true; editing = false; dirty = false; myLogStart = null;
   renderAll(); scrollGanttToToday();
   setStatus('見本を表示しています(「編集する」で入力も試せます。保存はされません)', 'saved');
 }
@@ -2103,7 +2405,8 @@ const GUIDE = [
   ['ガントチャートと仕事の一覧', '<ul><li>「<span class="kbd">＋ プロジェクトを追加</span>」「<span class="kbd">＋ 小業務を追加</span>」で入力します(編集中だけ出ます)。</li><li>名前や横棒を押すと、内容・注意点を見たり直したりできます。</li><li>プロジェクトには、<b>期間</b>と<b>当日</b>(行事の本番・締め切りの日)も入れられます(入れなくてもかまいません)。当日は ◆(2日以上なら黒い帯)で出ます。小業務が期間からはみ出すと「期間外」と出ます。</li><li>「担当者」で先生をしぼる、「完了を隠す」で終わった仕事を隠す、「月ごと・週ごと・日ごと」で目盛りを変えられます。</li><li>「仕事の一覧」タブでは、列の見出しを押すと並べ替えます。</li></ul>'],
   ['毎週・毎月の仕事(くり返し)', '<ul><li>小業務の入力画面の「<span class="kbd">くり返し</span>」で、「毎週(曜日)」「毎月○日」「毎月第○○曜日」「日付を自分で選ぶ」を選べます。夏休みなど、お休みの月も選べます。</li><li>ガントチャートには、1行に各回の ○ が並びます(🔁 の印)。済んだ回は灰色、過ぎてまだ済んでいない回は赤になります。</li><li>編集中に ○ を押すと「済」と「まだ」が切り替わります。入力画面の「済んだ回」でも印を付けられます。</li><li>進み具合は、済んだ回の数から自動で決まります。仕事量の表では、その月の回数分を数えます。</li></ul>'],
   ['仕事量の表と印刷','<ul><li>「<span class="kbd">仕事量の表を表示</span>」に印を付けると、ガントチャートの下に先生ごと・月ごとの仕事量が出ます。色が濃いほど多い月です。</li><li>「<span class="kbd">🖨 印刷</span>」で、用紙(A3横・A4横)、期間、担当者、プロジェクトを選んで印刷します。PDF にもできます。</li></ul>'],
-  ['編集の記録とバックアップ', '<ul><li>上の「<span class="kbd">編集の記録</span>」で、<b>だれが・いつ編集したか</b>を新しい順に見られます(何を変えたかは残りません)。</li><li>「設定」タブの「<span class="kbd">データを書き出す(バックアップ)</span>」で、日付入りの控えを作れます。学期の終わりなどに控えておいてください。</li><li>困ったときは README(使い方の説明書)の「困ったとき」を見てください。</li></ul>'],
+  ['定例会レジュメ', '<ol><li>「<span class="kbd">定例会レジュメ</span>」タブを開き、「編集する」を押してから「<span class="kbd">＋ 新しいレジュメを作る</span>」を押します。会議の日は、設定の「定例会の曜日」から自動で決まります(あとで直せます)。</li><li>ガントチャートの仕事から、「報告(完了した仕事)」「確認(次回までの仕事)」「要相談(期限切れ)」「近づいている行事」が自動で入ります。メモ欄に書き足したり、「＋ 行を書き足す」で行を足したりできます。</li><li>「協議事項」「連絡事項」を書き、「<span class="kbd">🖨 印刷(A4縦)</span>」で印刷します。</li><li>会議のあとに「決定事項」を書いておくと、次の会のレジュメの「前回の決定事項」に写されます。</li></ol>'],
+  ['編集の記録とバックアップ','<ul><li>上の「<span class="kbd">編集の記録</span>」で、<b>だれが・いつ編集したか</b>を新しい順に見られます(何を変えたかは残りません)。</li><li>「設定」タブの「<span class="kbd">データを書き出す(バックアップ)</span>」で、日付入りの控えを作れます。学期の終わりなどに控えておいてください。</li><li>困ったときは README(使い方の説明書)の「困ったとき」を見てください。</li></ul>'],
 ];
 let guidePage = 0;
 function renderGuide(){
