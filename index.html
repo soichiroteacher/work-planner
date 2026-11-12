@@ -106,6 +106,12 @@ main{ padding:12px 14px; }
 .occ:hover{ transform:scale(1.25); }
 .legend .occ{ position:static; display:inline-block; vertical-align:middle; margin:0; cursor:default; }
 .rep-icon{ font-size:13px; flex-shrink:0; }
+/* プロジェクトの当日: 1日なら ◆、2日以上なら黒い帯(白黒印刷でも分かるように黒) */
+.evt{ position:absolute; top:10px; width:13px; height:13px; margin-left:-6.5px; background:#222; transform:rotate(45deg); z-index:3; cursor:pointer; }
+.evt-band{ position:absolute; top:9px; height:15px; background:#222; z-index:3; cursor:pointer; border-radius:2px; }
+.ev-note{ font-weight:bold; color:#222; }
+.legend .evt{ position:static; display:inline-block; vertical-align:middle; margin:0 3px; cursor:default; }
+.out-mark{ font-size:12px; color:#8a5a00; background:#fff3c4; border:1px solid #d9b100; padding:0 5px; border-radius:3px; flex-shrink:0; font-weight:normal; }
 .pbar.done{ background:#aaa; } .pbar.done::before,.pbar.done::after{ background:#aaa; }
 .st-mark{ font-size:12px; padding:0 5px; border-radius:3px; border:1px solid var(--line-strong); flex-shrink:0; }
 .st-mark.st-doing{ border-color:var(--accent); color:var(--accent); }
@@ -217,6 +223,9 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
 .p-root .rline{ top:calc(var(--p-row) / 2 - 1px); }
 .p-root .occ{ top:calc((var(--p-row) - var(--p-bar)) / 2); width:var(--p-bar); height:var(--p-bar); margin-left:calc(var(--p-bar) / -2); border-width:1.5px; cursor:default; }
 .p-root .occ.od{ border-width:2.5px; }
+.p-root .evt{ top:calc((var(--p-row) - var(--p-bar)) / 2); width:var(--p-bar); height:var(--p-bar); margin-left:calc(var(--p-bar) / -2); cursor:default; }
+.p-root .evt-band{ top:calc((var(--p-row) - var(--p-bar)) / 2); height:var(--p-bar); cursor:default; }
+.p-legend .evt{ position:static; display:inline-block; vertical-align:middle; margin:0 3px; width:9px; height:9px; }
 .p-legend .occ{ position:static; display:inline-block; vertical-align:middle; margin:0; }
 .p-note.in{ z-index:3; top:calc((var(--p-row) - var(--p-small) - 4px) / 2); line-height:calc(var(--p-small) + 4px); background:#fff; padding:0 4px; border-radius:3px; }
 #printOverlay select{ width:auto; }
@@ -294,7 +303,8 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
       <span><span class="bar st-doing"></span> 作業中</span>
       <span><span class="bar st-done"></span> 完了</span>
       <span><span class="bar st-doing overdue"></span> <span class="od-mark">期限切れ</span> 期限を過ぎて終わっていない</span>
-      <span>🔁 毎週・毎月の仕事： <span class="occ"></span> まだ <span class="occ done"></span> 済 <span class="occ od"></span> 過ぎて済んでいない</span>
+      <span><span class="evt"></span> 行事などの当日</span>
+      <span>🔁 毎週・毎月の仕事：<span class="occ"></span> まだ <span class="occ done"></span> 済 <span class="occ od"></span> 過ぎて済んでいない</span>
       <span>名前をクリックすると、内容や注意点を見る・直すことができます</span>
     </div>
     <div class="gwrap" id="gwrap"><div class="gantt" id="gantt"></div></div>
@@ -408,6 +418,10 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
     <div class="row"><span class="k">名前</span><span class="v"><input type="text" id="pName" placeholder="例：入学式、学校公開"></span></div>
     <div class="row"><span class="k">主担当</span><span class="v choices" id="pOwners"></span></div>
     <div class="row"><span class="k">内容のメモ</span><span class="v"><textarea id="pMemo"></textarea></span></div>
+    <div class="row"><span class="k">期間</span><span class="v"><input type="date" id="pStart"> 〜 <input type="date" id="pEnd">
+      <div class="hint">入れなくてもかまいません。空のときは、中の小業務の期間から自動で決まります。小業務を入れる前に、大まかな時期を並べておきたいときに入れてください。</div></span></div>
+    <div class="row"><span class="k">当日</span><span class="v"><input type="date" id="pEvStart"> 〜 <input type="date" id="pEvEnd">
+      <div class="hint">行事の本番の日や、提出の締め切り日など(入れなくてもかまいません)。1日だけなら左だけ入れてください。2日以上続くときは、終わりの日も入れてください。ガントチャートに ◆ で出ます。</div></span></div>
     <div class="row"><span class="k">注意点</span><span class="v"><textarea id="pCaution"></textarea></span></div>
     <div class="row"><span class="k">毎年</span><span class="v choices"><label><input type="checkbox" id="pRepeat"> 毎年くり返す(次の年度に写す)</label></span></div>
     <div class="row edit-only"><span class="k">並び順</span><span class="v"><button id="pUp">▲ 上へ</button> <button id="pDown">▼ 下へ</button></span></div>
@@ -694,7 +708,12 @@ function normalizeState(o){
   o.meta.fiscalYear = Number(o.meta.fiscalYear) || currentFiscalYear();
   o.meta.members = (Array.isArray(o.meta.members)?o.meta.members:[]).filter(m=>m && m.id).map(m=>({ id:String(m.id), name:String(m.name||'') }));
   if(!Array.isArray(o.meta.workloadLevels) || o.meta.workloadLevels.length===0) o.meta.workloadLevels = base.meta.workloadLevels;
-  o.projects = (Array.isArray(o.projects)?o.projects:[]).filter(p=>p && p.id).map((p,i)=>Object.assign({ name:'', owners:[], memo:'', caution:'', repeatYearly:true, order:i }, p));
+  o.projects = (Array.isArray(o.projects)?o.projects:[]).filter(p=>p && p.id).map((p,i)=>{
+    // start/end: プロジェクトの期間、eventStart/eventEnd: 当日(本番の日)。どれも入れなくてよい(空なら '')
+    p = Object.assign({ name:'', owners:[], memo:'', caution:'', repeatYearly:true, order:i, start:'', end:'', eventStart:'', eventEnd:'' }, p);
+    ['start','end','eventStart','eventEnd'].forEach(k=>{ if(!isYmd(p[k])) p[k] = ''; });
+    return p;
+  });
   o.tasks = (Array.isArray(o.tasks)?o.tasks:[]).filter(t=>t && t.id).map((t,i)=>{
     t = Object.assign({ projectId:'', name:'', assignees:[], start:'', due:'', status:'未着手', workload:2, memo:'', caution:'', repeatYearly:true, order:i }, t);
     if(!CONFIG.statuses.includes(t.status)) t.status = '未着手';
@@ -722,10 +741,34 @@ function taskSpan(t){
   return a<=b ? {a,b} : {a:b, b:a};
 }
 function projectTasks(pid){ return state.tasks.filter(t=>t.projectId===pid); }
+// プロジェクトの期間(2026-11-12 ユーザーと確認):
+//  入れてあればその期間。空なら、今までどおり中の小業務の期間から自動で決める。
+//  小業務が入れた期間からはみ出しても止めず、知らせるだけ(outsideTasks)。
 function projectSpan(pid){
+  const p = state.projects.find(x=>x.id===pid);
+  if(p && (p.start || p.end)) return taskSpan({ start:p.start, due:p.end });
+  return tasksSpan(pid);
+}
+// 中の小業務の期間から決めた期間
+function tasksSpan(pid){
   let a=Infinity, b=-Infinity;
   projectTasks(pid).forEach(t=>{ const sp = taskSpan(t); if(sp){ a=Math.min(a,sp.a); b=Math.max(b,sp.b); } });
   return a===Infinity ? null : {a,b};
+}
+// 当日(本番の日)。1日だけなら a===b。入れていなければ null
+function eventSpan(p){ return (p && (p.eventStart || p.eventEnd)) ? taskSpan({ start:p.eventStart, due:p.eventEnd }) : null; }
+function eventText(p){
+  const ev = eventSpan(p); if(!ev) return '';
+  return '当日 ' + fmtMDW(numToYmd(ev.a)) + (ev.b>ev.a ? '〜' + fmtMDW(numToYmd(ev.b)) : '');
+}
+// 入れた期間からはみ出している小業務(期間を入れていなければ空)。当日がはみ出しているときは '当日' も入れる
+function outsideTasks(p){
+  if(!p || !(p.start || p.end)) return [];
+  const sp = projectSpan(p.id), out = [];
+  projectTasks(p.id).forEach(t=>{ const s = taskSpan(t); if(s && (s.a<sp.a || s.b>sp.b)) out.push(t.name || '(名前なし)'); });
+  const ev = eventSpan(p);
+  if(ev && (ev.a<sp.a || ev.b>sp.b)) out.push('当日');
+  return out;
 }
 function projectDone(pid){ const ts = projectTasks(pid); return ts.length>0 && ts.every(t=>statusOf(t)==='完了'); }
 // 小業務の並び順: 始まり(なければ期限)の早い順。日付のないものは最後。
@@ -850,13 +893,26 @@ function renderGantt(){
       const p = r.p;
       if(!p){ html += '<div class="grow proj"><div class="glabel" style="cursor:default"><span class="toggle"></span><span class="nm">(プロジェクトに入っていない小業務)</span></div><div class="gtime" style="width:'+W+'px"></div></div>'; return; }
       const sp = projectSpan(p.id), done = projectDone(p.id);
-      const n = projectTasks(p.id).length;
-      html += '<div class="grow proj"><div class="glabel" data-proj="'+esc(p.id)+'">'
+      const n = projectTasks(p.id).length, out = outsideTasks(p);
+      const ptip = esc(p.name+(sp ? '\n期間 '+fmtMDW(numToYmd(sp.a))+' 〜 '+fmtMDW(numToYmd(sp.b)) : '')+(eventText(p) ? '\n'+eventText(p) : ''));
+      // 当日の印(◆、2日以上なら黒い帯)と、その横の「当日 4/7(火)」
+      let evHtml = '';
+      const ev = eventSpan(p);
+      if(ev && ev.b>=start && ev.a<=end){
+        const a = Math.max(ev.a,start), b = Math.min(ev.b,end);
+        evHtml = ev.a===ev.b
+          ? '<div class="evt" style="left:'+(x(a)+Math.round(ppd/2))+'px" data-proj="'+esc(p.id)+'" title="'+esc(eventText(p))+'"></div>'
+          : '<div class="evt-band" style="left:'+x(a)+'px;width:'+Math.max(6, x(b+1)-x(a))+'px" data-proj="'+esc(p.id)+'" title="'+esc(eventText(p))+'"></div>';
+        const ex = Math.max(sp ? x(Math.min(sp.b,end)+1) : 0, x(b+1)) + 10;
+        if(ex + 150 <= W) evHtml += '<div class="bar-note ev-note" style="left:'+ex+'px">'+esc(eventText(p))+'</div>';
+      }
+      html += '<div class="grow proj"><div class="glabel" data-proj="'+esc(p.id)+'" title="'+ptip+'">'
         + '<span class="toggle" data-toggle="'+esc(p.id)+'" title="開く/閉じる">'+(collapsed.has(p.id)?'▶':'▼')+'</span>'
         + '<span class="nm">'+esc(p.name||'(名前なし)')+(collapsed.has(p.id)&&n ? '('+n+'件)' : '')+'</span>'
         + (p.caution ? '<span class="caution" title="注意点があります">⚠</span>' : '')
+        + (out.length ? '<span class="out-mark" title="プロジェクトの期間からはみ出しています：'+esc(out.join('、'))+'">期間外 '+out.length+'</span>' : '')
         + '<span class="who">'+esc(namesOf(p.owners))+'</span></div>'
-        + '<div class="gtime" style="width:'+W+'px">'+bar(sp, 'pbar'+(done?' done':''), 'data-proj="'+esc(p.id)+'" title="'+esc(p.name)+'"')+'</div></div>';
+        + '<div class="gtime" style="width:'+W+'px">'+bar(sp, 'pbar'+(done?' done':''), 'data-proj="'+esc(p.id)+'" title="'+ptip+'"')+evHtml+'</div></div>';
     } else {
       const t = r.t, od = isOverdue(t), sp = taskSpan(t), st = statusOf(t);
       const cls = 'bar '+STATUS_CLASS[st]+(od?' overdue':'');
@@ -1024,7 +1080,8 @@ function periodText(t){
   if(t.start && t.due) return t.start===t.due ? fmtMD(t.due) : fmtMD(t.start)+'〜'+fmtMD(t.due);
   return t.due ? '〜'+fmtMD(t.due) : fmtMD(t.start)+'〜';
 }
-// 印刷する行。期間にかからない仕事は出さない。小業務が1つも出ないプロジェクトも出さない。
+// 印刷する行。期間にかからない仕事は出さない。小業務が1つも出ないプロジェクトも出さない
+// (ただし、期間か当日を入れたプロジェクトは、それが印刷する期間にかかれば、小業務がなくても出す)。
 function printRows(opt){
   const match = t => { const sp = taskSpan(t);
     return sp && sp.b>=opt.range.a && sp.a<=opt.range.b
@@ -1035,7 +1092,11 @@ function printRows(opt){
   const rows = [];
   groups.forEach(({p, tasks})=>{
     const shown = tasks.filter(match).sort((a,b)=> taskDateKey(a).localeCompare(taskDateKey(b)) || a.order-b.order);
-    if(!shown.length) return;
+    if(!shown.length){
+      const own = p && (p.start || p.end || p.eventStart || p.eventEnd) ? [projectSpan(p.id), eventSpan(p)].filter(Boolean) : [];
+      const hit = own.some(s=>s.b>=opt.range.a && s.a<=opt.range.b);
+      if(!hit || (opt.member && !p.owners.includes(opt.member)) || (!opt.includeDone && projectDone(p.id))) return;
+    }
     rows.push({ kind:'proj', p });
     shown.forEach(t=> rows.push({ kind:'task', t }));
   });
@@ -1080,6 +1141,12 @@ function printHtml(opt, W){
     // 左右どちらにも入らない(1年中続く仕事など)ときは、横棒の上に白地で重ねる
     return '<div class="p-note in '+cls+'" style="left:'+(x(c.a)+8)+'px">'+esc(text)+'</div>';
   };
+  // 当日の印(1日は ◆、2日以上は黒い帯)
+  const evMark = p => {
+    const c = clip(eventSpan(p)); if(!c) return '';
+    return c.a===c.b ? '<div class="evt" style="left:'+x(c.a+0.5)+'px"></div>'
+      : '<div class="evt-band" style="left:'+x(c.a)+'px;width:'+Math.max(4, x(c.b+1)-x(c.a))+'px"></div>';
+  };
   let body = '';
   printRows(opt).forEach(r=>{
     if(r.kind==='proj'){
@@ -1087,7 +1154,7 @@ function printHtml(opt, W){
       const c = p ? clip(projectSpan(p.id)) : null;
       body += '<tr class="p-proj"><td class="p-label"><div class="p-lab"><span class="nm">'+esc(p ? (p.name||'(名前なし)') : '(プロジェクトに入っていない小業務)')+'</span></div></td>'
         + '<td><div class="p-time">'+lines+(p ? bar(c, 'pbar'+(projectDone(p.id)?' done':''))
-        + note(c, p.owners.length ? '主担当 '+namesOf(p.owners) : '', '') : '')+'</div></td></tr>';
+        + evMark(p) + note(c || clip(eventSpan(p)), [eventText(p), p.owners.length ? '主担当 '+namesOf(p.owners) : ''].filter(Boolean).join('　'), '') : '')+'</div></td></tr>';
     } else {
       const t = r.t, od = isOverdue(t), c = clip(taskSpan(t)), st = statusOf(t);
       if(t.repeat){
@@ -1117,6 +1184,7 @@ function printHtml(opt, W){
     + (opt.includeDone ? '' : '(完了した仕事は省略)')+'　印刷 '+today.getFullYear()+'/'+(today.getMonth()+1)+'/'+today.getDate()+'</span></div>'
     + '<div class="p-legend"><span><span class="bar st-todo"></span> 未着手</span><span><span class="bar st-doing"></span> 作業中</span>'
     + '<span><span class="bar st-done"></span> 完了</span><span><span class="bar st-doing overdue"></span> 期限を過ぎて終わっていない</span>'
+    + '<span><span class="evt"></span> 行事などの当日</span>'
     + '<span>🔁 毎週・毎月の仕事 <span class="occ"></span> まだ <span class="occ done"></span> 済 <span class="occ od"></span> 過ぎて済んでいない</span>'
     + '<span>赤い点線は印刷した日</span></div>'
     + '<table class="p-gantt" style="width:'+W+'px"><colgroup><col style="width:'+P.label+'px"><col style="width:'+TW+'px"></colgroup>'
@@ -1284,7 +1352,8 @@ function renderList(){
       html += '<tr class="proj-row"><td colspan="'+cols.length+'">'
         + esc(p ? (p.name||'(名前なし)') : '(プロジェクトに入っていない小業務)')
         + (p && p.caution ? ' <span class="caution">⚠</span>' : '')
-        + (p ? '　<span class="hint">'+(p.owners.length?'主担当：'+esc(namesOf(p.owners))+'　':'')+(sp?fmtMD(numToYmd(sp.a))+'〜'+fmtMD(numToYmd(sp.b))+'　':'')+'完了 '+doneN+'/'+tasks.length+'</span>' : '')
+        + (p ? '　<span class="hint">'+(p.owners.length?'主担当：'+esc(namesOf(p.owners))+'　':'')+(sp?fmtMD(numToYmd(sp.a))+'〜'+fmtMD(numToYmd(sp.b))+'　':'')+(eventText(p)?'<b style="color:#222">◆ '+esc(eventText(p))+'</b>　':'')+'完了 '+doneN+'/'+tasks.length+'</span>'
+          + (outsideTasks(p).length ? ' <span class="out-mark" title="'+esc(outsideTasks(p).join('、'))+'">期間外 '+outsideTasks(p).length+'</span>' : '') : '')
         + (p ? '<span class="pbtns"><button data-editproj="'+esc(p.id)+'">'+(editing?'直す':'内容を見る')+'</button>'+(editing?'<button data-addtask="'+esc(p.id)+'">＋ 小業務</button>':'')+'</span>' : '')
         + '</td></tr>';
       shown.forEach(t=>{ html += taskRow(t); count++; });
@@ -1515,9 +1584,17 @@ function openProjectModal(id){
   $('pOwners').innerHTML = state.meta.members.length
     ? choiceHtml('checkbox', 'pOwn', state.meta.members.map(m=>({value:m.id, label:m.name})), v=>own.includes(v))
     : '<span class="hint">メンバーがまだいません。「設定」タブで追加してください。</span>';
-  ['pName','pMemo','pCaution','pRepeat'].forEach(k=> $(k).disabled = !editing);
-  const sp = p ? projectSpan(p.id) : null;
-  $('pPeriod').textContent = p ? '小業務 '+projectTasks(p.id).length+'件'+(sp ? '　期間 '+fmtMDW(numToYmd(sp.a))+' 〜 '+fmtMDW(numToYmd(sp.b))+'(小業務の期間から自動で決まります)' : '') : '期間は、あとで追加する小業務の期間から自動で決まります。';
+  $('pStart').value = p ? p.start : '';
+  $('pEnd').value = p ? p.end : '';
+  $('pEvStart').value = p ? p.eventStart : '';
+  $('pEvEnd').value = p ? p.eventEnd : '';
+  ['pName','pMemo','pCaution','pRepeat','pStart','pEnd','pEvStart','pEvEnd'].forEach(k=> $(k).disabled = !editing);
+  // 小業務の数と、小業務から決まる期間。入れた期間からはみ出した小業務があれば知らせる(止めはしない)
+  const ts = p ? tasksSpan(p.id) : null, out = outsideTasks(p);
+  $('pPeriod').innerHTML = p
+    ? '小業務 '+projectTasks(p.id).length+'件'+(ts ? '　小業務の期間 '+fmtMDW(numToYmd(ts.a))+' 〜 '+fmtMDW(numToYmd(ts.b)) : '')
+      + (out.length ? '<div class="out-mark" style="display:block;margin-top:6px;font-size:14px">⚠ プロジェクトの期間からはみ出しています('+out.length+'件)：'+esc(out.join('、'))+'<br>期間か、小業務の日付を確かめてください(このままでも使えます)。</div>' : '')
+    : '';
   $('pDelete').hidden = !editing || !p;
   $('pUp').parentElement.parentElement.hidden = !editing || !p;
   $('projErr').textContent = '';
@@ -1529,10 +1606,17 @@ $('pOk').addEventListener('click', ()=>{
   if(!editing) return;
   const name = $('pName').value.trim();
   if(!name){ $('projErr').textContent = 'プロジェクトの名前を入れてください。'; return; }
+  const start = $('pStart').value, end = $('pEnd').value;
+  let evS = $('pEvStart').value, evE = $('pEvEnd').value;
+  if(start && end && start > end){ $('projErr').textContent = '期間の始まりの日が、終わりの日より後になっています。日付を確かめてください。'; return; }
+  if(!evS && evE) evS = evE;          // 終わりだけ入れたときは、その1日とみなす
+  if(evS && evE && evS > evE){ $('projErr').textContent = '当日の始まりの日が、終わりの日より後になっています。日付を確かめてください。'; return; }
+  if(evE===evS) evE = '';             // 1日だけのときは終わりを空にしておく
   let p = editingProjId ? state.projects.find(x=>x.id===editingProjId) : null;
   if(!p){ p = { id:newId('p'), order: Math.max(-1, ...state.projects.map(x=>x.order))+1 }; state.projects.push(p); }
   Object.assign(p, { name, memo:$('pMemo').value, caution:$('pCaution').value.trim(), repeatYearly:$('pRepeat').checked,
-    owners: [...document.querySelectorAll('input[name=pOwn]:checked')].map(i=>i.value) });
+    owners: [...document.querySelectorAll('input[name=pOwn]:checked')].map(i=>i.value),
+    start, end, eventStart:evS, eventEnd:evE });
   closeOverlay('projOverlay');
   markDirty(); renderAll();
 });
@@ -1956,13 +2040,22 @@ function makeSample(){
   ];
   data.forEach(([pn, owners, caution, tasks], pi)=>{
     const pid = 'p'+pi;
-    s.projects.push({ id:pid, name:pn, owners:owners.map(i=>'m'+i), memo:'', caution, repeatYearly:true, order:pi });
+    s.projects.push({ id:pid, name:pn, owners:owners.map(i=>'m'+i), memo:'', caution, repeatYearly:true, order:pi, start:'', end:'', eventStart:'', eventEnd:'' });
     tasks.forEach(([tn, asg, a, b, wl, cau], ti)=>{
       let st = auto(a, b);
       if(tn==='アンケートの集計' && st==='完了') st = '作業中'; // 期限切れの例
       s.tasks.push({ id:'t'+pi+'_'+ti, projectId:pid, name:tn, assignees:asg.map(i=>'m'+i), start:a, due:b, status:st, workload:wl, memo:'', caution:cau, repeatYearly:true, order:ti });
     });
   });
+  // プロジェクトの期間と当日の見本:
+  //  入学式・学校公開(2日間)に当日、学校評価に期間(「結果のまとめと報告」がはみ出す例)、
+  //  合唱コンクールは小業務をまだ入れていない例(期間と当日だけで表示される)
+  const pj = name => s.projects.find(p=>p.name===name);
+  Object.assign(pj('入学式'), { eventStart:d(4,7) });
+  Object.assign(pj('学校公開'), { eventStart:d(6,12), eventEnd:d(6,13) });
+  Object.assign(pj('学校評価'), { start:d(8,20), end:d(10,23) });
+  s.projects.push({ id:'p9', name:'合唱コンクール', owners:['m3'], memo:'小業務はこれから分ける', caution:'', repeatYearly:true, order:s.projects.length,
+    start:d(9,1), end:d(10,31), eventStart:d(10,24), eventEnd:'' });
   // くり返しの仕事の見本(毎月・毎週・日付を選ぶ)。今日より前の回は「済」にする。
   // ただし毎週の仕事は、いちばん近い過ぎた回を「まだ」にして、期限切れの例にする。
   const rep = (id, name, asg, wl, repeat, memo) => {
@@ -2000,7 +2093,7 @@ const GUIDE = [
   ['このアプリでできること', '<ul><li>分掌・学年の仕事を「プロジェクト」(例：入学式)と「小業務」(例：式次第の作成)に分けて入力します。</li><li>ガントチャートで、いつ・だれが・どこまで進んだかを見ます。</li><li>仕事量の表で、先生ごと・月ごとの仕事の偏りを見ます。</li><li>A3(掲示用)・A4(配布用)で印刷できます。</li></ul><p>まずは下の「<b>見本で試す</b>」を押すと、架空の教務部のデータで操作を試せます(見本は保存されません)。</p>'],
   ['データファイルを開く・作る', '<ol><li>いつも使うときは、上の「<span class="kbd">開く</span>」を押し、校務共有サーバーに置いてある分掌・学年のデータファイル(.json)を選びます。</li><li>はじめて使う分掌・学年は「<span class="kbd">新規作成</span>」で作ります。保存する場所は校務共有サーバーのフォルダにしてください。</li><li>次からは、開くと前回のファイルが表示されます。</li></ol>'],
   ['入力するとき(名前の入力)', '<ol><li>上の「<span class="kbd">✏ 編集する</span>」を押します。</li><li><b>お名前を入れて</b>「編集を始める」を押します。名前が空のままでは始められません。入れた名前は次から最初から入っています。</li><li>編集中は、ほかの先生の画面に「○○先生が編集中」と出ます。<b>編集できるのは1人ずつ</b>です。</li><li>入力した内容は自動で保存されます。終わったら必ず「<span class="kbd">編集を終える</span>」を押してください。</li></ol>'],
-  ['ガントチャートと仕事の一覧', '<ul><li>「<span class="kbd">＋ プロジェクトを追加</span>」「<span class="kbd">＋ 小業務を追加</span>」で入力します(編集中だけ出ます)。</li><li>名前や横棒を押すと、内容・注意点を見たり直したりできます。</li><li>「担当者」で先生をしぼる、「完了を隠す」で終わった仕事を隠す、「月ごと・週ごと・日ごと」で目盛りを変えられます。</li><li>「仕事の一覧」タブでは、列の見出しを押すと並べ替えます。</li></ul>'],
+  ['ガントチャートと仕事の一覧', '<ul><li>「<span class="kbd">＋ プロジェクトを追加</span>」「<span class="kbd">＋ 小業務を追加</span>」で入力します(編集中だけ出ます)。</li><li>名前や横棒を押すと、内容・注意点を見たり直したりできます。</li><li>プロジェクトには、<b>期間</b>と<b>当日</b>(行事の本番・締め切りの日)も入れられます(入れなくてもかまいません)。当日は ◆(2日以上なら黒い帯)で出ます。小業務が期間からはみ出すと「期間外」と出ます。</li><li>「担当者」で先生をしぼる、「完了を隠す」で終わった仕事を隠す、「月ごと・週ごと・日ごと」で目盛りを変えられます。</li><li>「仕事の一覧」タブでは、列の見出しを押すと並べ替えます。</li></ul>'],
   ['毎週・毎月の仕事(くり返し)', '<ul><li>小業務の入力画面の「<span class="kbd">くり返し</span>」で、「毎週(曜日)」「毎月○日」「毎月第○○曜日」「日付を自分で選ぶ」を選べます。夏休みなど、お休みの月も選べます。</li><li>ガントチャートには、1行に各回の ○ が並びます(🔁 の印)。済んだ回は灰色、過ぎてまだ済んでいない回は赤になります。</li><li>編集中に ○ を押すと「済」と「まだ」が切り替わります。入力画面の「済んだ回」でも印を付けられます。</li><li>進み具合は、済んだ回の数から自動で決まります。仕事量の表では、その月の回数分を数えます。</li></ul>'],
   ['仕事量の表と印刷','<ul><li>「<span class="kbd">仕事量の表を表示</span>」に印を付けると、ガントチャートの下に先生ごと・月ごとの仕事量が出ます。色が濃いほど多い月です。</li><li>「<span class="kbd">🖨 印刷</span>」で、用紙(A3横・A4横)、期間、担当者、プロジェクトを選んで印刷します。PDF にもできます。</li></ul>'],
   ['編集の記録とバックアップ', '<ul><li>上の「<span class="kbd">編集の記録</span>」で、<b>だれが・いつ編集したか</b>を新しい順に見られます(何を変えたかは残りません)。</li><li>「設定」タブの「<span class="kbd">データを書き出す(バックアップ)</span>」で、日付入りの控えを作れます。学期の終わりなどに控えておいてください。</li><li>困ったときは README(使い方の説明書)の「困ったとき」を見てください。</li></ul>'],
