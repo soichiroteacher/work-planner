@@ -282,6 +282,7 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
   <button id="btnSave" disabled>保存</button>
   <button id="btnOpen">開く</button>
   <button id="btnNew">新規作成</button>
+  <button id="btnCombine" title="分掌・学年ごとのファイルを何個か読み込んで、学校全体をまとめて見ます(見るだけ)">まとめて見る</button>
   <button id="btnLog" title="だれが・いつ編集したかを見ます">編集の記録</button>
   <button id="btnGuide">はじめての方へ</button>
   <span id="status"></span>
@@ -302,6 +303,8 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
     <div class="btns">
       <button class="primary" id="bnOpen">データファイルを開く</button>
       <button id="bnNew">新規作成</button>
+      <button id="bnNextYear">前年度から作る</button>
+      <button id="bnCombine">まとめて見る(学校全体)</button>
       <button id="bnSample">見本を表示する</button>
       <button id="bnGuide">はじめての方へ(使い方)</button>
     </div>
@@ -513,6 +516,26 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
   </div>
 </div>
 
+<!-- ===== 前年度から作る ===== -->
+<div class="overlay" id="nyOverlay">
+  <div class="modal" style="width:620px">
+    <h2>前年度から今年度のファイルを作る</h2>
+    <div class="row"><span class="k">元にする<br>ファイル</span><span class="v">
+      <div id="nySrcName" style="font-weight:bold"></div>
+      <div style="margin-top:6px"><button id="nyUseOpen">今開いているファイルを使う</button> <button id="nyPick">ほかのファイルを選ぶ</button></div>
+    </span></div>
+    <div id="nySummary"></div>
+    <div class="hint" style="line-height:1.7">
+      ・「毎年くり返す」に印が付いているプロジェクトと小業務だけを写します。<br>
+      ・日付は、<b>同じ週の同じ曜日</b>にそろえます(例：2026/4/7(火) → 2027/4/6(火))。毎週・毎月の仕事は、決まりをそのまま写します。<br>
+      ・進み具合は「未着手」に戻します。担当・メモ・注意点・メンバー・設定はそのまま写します。担当が替わった仕事は、あとで直してください。<br>
+      ・定例会レジュメと編集の記録は写しません。<b>元のファイルは書き換えません</b>(新しいファイルとして保存します)。
+    </div>
+    <div class="err" id="nyErr"></div>
+    <div class="foot"><span class="spacer"></span><button id="nyCancel">やめる</button><button class="primary" id="nyOk">作る</button></div>
+  </div>
+</div>
+
 <!-- ===== 編集の記録 ===== -->
 <div class="overlay" id="logOverlay">
   <div class="modal" style="width:560px">
@@ -548,6 +571,7 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
     <div class="row"><span class="k">種類</span><span class="v choices" id="nType"></span></div>
     <div class="row"><span class="k">名前</span><span class="v"><input type="text" id="nName" placeholder="例：教務部、1学年"></span></div>
     <div class="row"><span class="k">年度</span><span class="v"><input type="number" id="nYear" style="width:100px"> 年度</span></div>
+    <div class="hint" style="margin-bottom:8px">前の年度のファイルがあるときは、<button id="nFromPrev">前年度から作る</button> を使うと、毎年くり返す仕事を写して作れます。</div>
     <div class="hint">「作る」を押すと、保存する場所を聞かれます。校務共有サーバーの、この分掌・学年のフォルダを選んでください。</div>
     <div class="err" id="nErr"></div>
     <div class="foot"><span class="spacer"></span><button id="nCancel">やめる</button><button class="primary" id="nOk">作る</button></div>
@@ -585,6 +609,7 @@ let fileHandle = null;     // データファイル(保存先)
 let editing = false;       // 編集中か
 let dirty = false;         // 保存していない変更があるか
 let isSample = false;      // 見本を表示中か(見本は保存しない)
+let isCombined = false;    // 「まとめて見る」で、何個かのファイルをまとめて表示中か(見るだけ。保存も編集もしない)
 let lastKnownModified = 0; // 最後に読み書きしたときのファイルの更新時刻(ほかの人の保存に気づくため)
 let lastLockStamp = 0;     // 最後に「編集中」の印を保存した時刻
 const supportsFSA = 'showOpenFilePicker' in window;
@@ -838,11 +863,11 @@ function renderAll(){
 }
 function renderTop(){
   const has = !!state;
-  $('scopeTitle').textContent = has ? (state.meta.scopeName || '(名前なし)') + '　' + state.meta.fiscalYear + '年度' + (isSample ? '　【見本・保存されません】' : '') : '';
+  $('scopeTitle').textContent = has ? (state.meta.scopeName || '(名前なし)') + '　' + state.meta.fiscalYear + '年度' + (isSample ? '　【見本・保存されません】' : '') + (isCombined ? '　【まとめて表示・見るだけ】' : '') : '';
   $('editBadge').textContent = editing ? '✏ 編集中' : '閲覧のみ';
   $('editBadge').classList.toggle('on', editing);
   $('btnEdit').textContent = editing ? '編集を終える' : '✏ 編集する';
-  $('btnEdit').disabled = !has;
+  $('btnEdit').disabled = !has || isCombined;   // まとめて見ているときは編集できない(各ファイルで直す)
   $('btnLog').disabled = !has;
   $('btnReload').hidden = !fileHandle || editing;
   $('btnSave').disabled = !editing || isSample;
@@ -1798,6 +1823,13 @@ function currentMeeting(){
 }
 
 function renderMeeting(){
+  if(isCombined){
+    // まとめて見ているときは、各分掌のレジュメが混ざらないよう使えないことにする
+    ['mSelect','mPrint','mNew','mReimport','mDelete'].forEach(id=> $(id).hidden = true);
+    $('mBody').innerHTML = '<div class="empty-msg">まとめて見ているときは、定例会レジュメは使えません。それぞれの分掌・学年のファイルを開いてください。</div>';
+    return;
+  }
+  $('mPrint').hidden = false;
   const list = sortedMeetings(), m = currentMeeting();
   $('mSelect').innerHTML = list.map(x=>'<option value="'+esc(x.id)+'">'+fmtMDW(x.date).replace(/^/, x.date.slice(0,4)+'/')+' の定例会</option>').join('');
   $('mSelect').hidden = !list.length;
@@ -1950,7 +1982,7 @@ function renderSettings(){
   $('pwState').textContent = state.meta.editPasswordHash ? 'パスワードあり' : 'パスワードなし';
   $('newPw').disabled = ro; $('btnSetPw').disabled = ro;
   $('btnImport').disabled = ro || isSample;
-  $('btnExport').disabled = isSample;
+  $('btnExport').disabled = isSample || isCombined;
 }
 $('setScopeType').addEventListener('change', e=>{ if(!editing) return; state.meta.scopeType = e.target.value; markDirty(); });
 $('setScopeName').addEventListener('change', e=>{ if(!editing) return; state.meta.scopeName = e.target.value.trim(); markDirty(); renderTop(); });
@@ -2066,7 +2098,7 @@ async function readHandle(handle){
 }
 async function openHandle(handle){
   const { obj, modified } = await readHandle(handle);
-  state = obj; fileHandle = handle; isSample = false; editing = false; dirty = false;
+  state = obj; fileHandle = handle; isSample = false; isCombined = false; editing = false; dirty = false;
   lastKnownModified = modified;
   try{ await idbSet('lastFile', handle); }catch(e){}
   setStatus('');
@@ -2184,6 +2216,7 @@ $('logClose').addEventListener('click', ()=>closeOverlay('logOverlay'));
 
 //////////////////////// 編集する / 編集を終える ////////////////////////
 function openEditDialog(){
+  if(isCombined){ alert("まとめて見ているときは編集できません。直すときは、上の「開く」で、その分掌・学年のファイルを開いてください。"); return; }
   $('eName').value = editorName();
   $('ePw').value = '';
   $('ePwRow').hidden = !state.meta.editPasswordHash;
@@ -2273,20 +2306,178 @@ $('nOk').addEventListener('click', async ()=>{
   const name = $('nName').value.trim(), y = Number($('nYear').value);
   if(!name){ $('nErr').textContent = '名前(例：教務部、1学年)を入れてください。'; return; }
   if(!(y>=2000 && y<=2100)){ $('nErr').textContent = '年度は西暦の数字(例：2026)で入れてください。'; return; }
-  if(editing && fileHandle && !isSample) await stopEditing();
-  const prev = { state, fileHandle, isSample, editing, dirty };
-  state = emptyState(type, name, y);
-  fileHandle = null; isSample = false; editing = true; dirty = false;
-  state.editLock = newLock(editorName());
-  beginLog(editorName());
   closeOverlay('newOverlay');
-  const ok = await doSaveAs();
-  if(!ok){ ({ state, fileHandle, isSample, editing, dirty } = prev); renderAll(); return; } // 保存先を選ばなかったときは元に戻す
-  lastLockStamp = Date.now();
+  if(!(await startNewFile(emptyState(type, name, y)))) return;
   view.tab = 'settings'; savePref();
   renderAll();
   alert('作りました。はじめに「設定」の「メンバー」に、担当者の名前を入れてください。');
 });
+// 新しいデータで編集を始め、保存先を聞いて保存する(新規作成と、前年度から作るで共通)。
+// 保存先を選ばなかったときは元の状態に戻して false を返す。
+async function startNewFile(newState){
+  if(editing && fileHandle && !isSample) await stopEditing();
+  const prev = { state, fileHandle, isSample, isCombined, editing, dirty };
+  state = newState;
+  fileHandle = null; isSample = false; isCombined = false; editing = true; dirty = false;
+  state.editLock = newLock(editorName());
+  beginLog(editorName());
+  const ok = await doSaveAs();
+  if(!ok){ ({ state, fileHandle, isSample, isCombined, editing, dirty } = prev); renderAll(); return false; }
+  lastLockStamp = Date.now();
+  return true;
+}
+
+//////////////////////// 前年度から作る ////////////////////////
+// 決まり(2026-09-27 ユーザーと確認): 日付は「同じ週の同じ曜日」にそろえる。
+// 1年後の同じ月日に近い(前後3日以内の)、同じ曜日の日にする。364日ずつずらすと年々ずれていくので、毎回1年後の月日を基準にする。
+function shiftYmd(s){
+  if(!isYmd(s)) return s;
+  const [y,m,d] = s.split('-').map(Number);
+  const tgt = (m===2 && d===29) ? dayNum((y+1)+'-02-28') : dayNum((y+1)+'-'+pad2(m)+'-'+pad2(d));
+  const wd = weekdayOf(dayNum(s));
+  for(let k=0; k<=3; k++){
+    if(weekdayOf(tgt-k)===wd) return numToYmd(tgt-k);
+    if(weekdayOf(tgt+k)===wd) return numToYmd(tgt+k);
+  }
+  return numToYmd(tgt);
+}
+// 前年度のデータ(src)から、次の年度のデータを作る。src は書き換えない
+function makeNextYear(src){
+  const fy = src.meta.fiscalYear, nfy = fy + 1;
+  const o = emptyState(src.meta.scopeType, src.meta.scopeName, nfy);
+  Object.assign(o.meta, {
+    members: src.meta.members.map(m=>({...m})),
+    workloadLevels: src.meta.workloadLevels.map(l=>({...l})),
+    meetingWeekday: src.meta.meetingWeekday,
+    editPasswordHash: src.meta.editPasswordHash,
+  });
+  // 年度の初め・終わりの日は、新しい年度の初め・終わりにする(1年中くり返す仕事が、新しい年度でも1年中になるように)
+  const fyS = fy+'-04-01', fyE = (fy+1)+'-03-31';
+  const sh = s => s===fyS ? nfy+'-04-01' : s===fyE ? (nfy+1)+'-03-31' : shiftYmd(s);
+  const keep = new Set();
+  let skipP = 0, skipT = 0;
+  src.projects.forEach(p=>{
+    if(!p.repeatYearly){ skipP++; return; }
+    keep.add(p.id);
+    o.projects.push({ ...p, owners:[...p.owners], start:sh(p.start), end:sh(p.end), eventStart:sh(p.eventStart), eventEnd:sh(p.eventEnd) });
+  });
+  src.tasks.forEach(t=>{
+    if(!t.repeatYearly || (t.projectId && !keep.has(t.projectId))){ skipT++; return; }
+    const rep = t.repeat ? JSON.parse(JSON.stringify(t.repeat)) : null;
+    if(rep && rep.type==='dates') rep.dates = rep.dates.map(sh).sort();
+    o.tasks.push({ ...t, assignees:[...t.assignees], start:sh(t.start), due:sh(t.due), status:'未着手', doneAt:'', doneDates:[], repeat:rep });
+  });
+  return { state:o, copiedP:o.projects.length, copiedT:o.tasks.length, skipP, skipT };
+}
+let nySrc = null, nySrcIsSample = false;
+function openNextYearDialog(){
+  nySrc = null; nySrcIsSample = false;
+  $('nyUseOpen').hidden = !state || isCombined;
+  $('nyErr').textContent = '';
+  if(state && !isCombined) useNySource(state, isSample, fileHandle ? fileHandle.name : (isSample ? '見本' : '今開いているデータ'));
+  else showNySource();
+  $('nyOverlay').classList.add('show');
+}
+function useNySource(obj, sample, label){
+  nySrc = JSON.parse(JSON.stringify(obj)); nySrcIsSample = sample;
+  nySrc.label = label;
+  showNySource();
+}
+function showNySource(){
+  if(!nySrc){ $('nySrcName').textContent = '(まだ選んでいません)'; $('nySummary').innerHTML = ''; $('nyOk').disabled = true; return; }
+  const r = makeNextYear(nySrc);
+  $('nySrcName').textContent = nySrc.label + '(' + (nySrc.meta.scopeName||'') + '　' + nySrc.meta.fiscalYear + '年度)';
+  $('nySummary').innerHTML = '<p style="font-size:16px">→ <b>' + esc(nySrc.meta.scopeName||'') + '　' + (nySrc.meta.fiscalYear+1) + '年度</b> のファイルを作ります。<br>'
+    + '写すもの：プロジェクト ' + r.copiedP + '件・小業務 ' + r.copiedT + '件'
+    + (r.skipP || r.skipT ? '<br><span class="hint">写さないもの(「毎年くり返す」の印がないもの、またはそのプロジェクトの中のもの)：プロジェクト ' + r.skipP + '件・小業務 ' + r.skipT + '件</span>' : '') + '</p>'
+    + (nySrcIsSample ? '<p class="hint">見本から作るので、作ったものも見本として表示します(保存はされません)。</p>' : '');
+  $('nyOk').disabled = false;
+}
+$('nyUseOpen').addEventListener('click', ()=>{ if(state && !isCombined) useNySource(state, isSample, fileHandle ? fileHandle.name : (isSample ? '見本' : '今開いているデータ')); });
+$('nyPick').addEventListener('click', ()=>{
+  pickFileText((text, name)=>{
+    try{ useNySource(normalizeState(JSON.parse(text)), false, name); $('nyErr').textContent = ''; }
+    catch(e){ $('nyErr').textContent = '「'+name+'」を読み込めませんでした。仕事管理のデータファイル(.json)を選んでください。('+e.message+')'; }
+  });
+});
+$('nyCancel').addEventListener('click', ()=>closeOverlay('nyOverlay'));
+$('nyOk').addEventListener('click', async ()=>{
+  if(!nySrc) return;
+  const r = makeNextYear(nySrc);
+  closeOverlay('nyOverlay');
+  if(nySrcIsSample){
+    // 見本から作ったときは、見本として表示するだけ(保存しない)
+    state = r.state; fileHandle = null; isSample = true; isCombined = false; editing = false; dirty = false; myLogStart = null;
+    view.tab = 'gantt'; savePref(); renderAll(); scrollGanttToToday();
+    setStatus('見本から次の年度を作りました(保存はされません)', 'saved');
+    return;
+  }
+  if(!(await confirmDiscard())) return;
+  if(!(await startNewFile(r.state))) return;
+  view.tab = 'list'; savePref();
+  renderAll();
+  alert((r.state.meta.fiscalYear)+'年度のファイルを作りました(プロジェクト '+r.copiedP+'件・小業務 '+r.copiedT+'件)。\n「仕事の一覧」で、日付と担当を確かめてください。担当が替わった仕事は直してください。');
+});
+$('bnNextYear').addEventListener('click', openNextYearDialog);
+$('nFromPrev').addEventListener('click', ()=>{ closeOverlay('newOverlay'); openNextYearDialog(); });
+
+//////////////////////// まとめて見る(学校全体) ////////////////////////
+// 決まり(2026-09-27 ユーザーと確認): 分掌・学年ごとのファイルを複数読み込んで、まとめて表示・印刷するだけ(編集は各ファイルで)。
+// ・プロジェクト名の前に【分掌名】を付けて並べる。プロジェクトに入っていない小業務は【分掌名】その他 にまとめる。
+// ・メンバーは名前で同じ人とみなす(分掌をまたいだ仕事量の偏りが見えるように)。
+// ・年度が違うファイルは入れない(最初のファイルの年度にそろえる)。
+
+function combineStates(files){
+  const fy = files[0].obj.meta.fiscalYear;
+  const used = files.filter(f=>f.obj.meta.fiscalYear===fy), other = files.filter(f=>f.obj.meta.fiscalYear!==fy);
+  const o = emptyState('学校全体', 'まとめて見る(' + used.map(f=>f.obj.meta.scopeName || f.name).join('・') + ')', fy);
+  const byName = new Map();   // 名前 → まとめたあとのメンバーの id
+  let order = 0;
+  used.forEach((f, fi)=>{
+    const s = f.obj, label = s.meta.scopeName || f.name.replace(/\.json$/,'');
+    const mid = new Map();
+    s.meta.members.forEach(m=>{
+      const nm = m.name.trim();
+      if(!byName.has(nm)){ const id = 'c'+byName.size; byName.set(nm, id); o.meta.members.push({ id, name:nm }); }
+      mid.set(m.id, byName.get(nm));
+    });
+    const mapIds = ids => [...new Set(ids.map(i=>mid.get(i)).filter(Boolean))];
+    const pid = id => 'f'+fi+'_'+id;
+    sortedProjectsOf(s).forEach(p=> o.projects.push({ ...p, id:pid(p.id), name:'【'+label+'】'+p.name, owners:mapIds(p.owners), order:order++ }));
+    if(s.tasks.some(t=>!t.projectId)) o.projects.push({ id:pid('loose'), name:'【'+label+'】その他', owners:[], memo:'', caution:'', repeatYearly:true, order:order++, start:'', end:'', eventStart:'', eventEnd:'' });
+    s.tasks.forEach(t=> o.tasks.push({ ...t, id:pid(t.id), projectId: pid(t.projectId || 'loose'), assignees:mapIds(t.assignees) }));
+  });
+  return { state:normalizeState(o), used, other };
+}
+function sortedProjectsOf(s){ return s.projects.slice().sort((a,b)=>a.order-b.order); }
+function pickFilesTexts(cb){
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.json,application/json'; inp.multiple = true;
+  inp.onchange = async ()=>{ const out = []; for(const f of inp.files) out.push({ name:f.name, text: await f.text() }); if(out.length) cb(out); };
+  inp.click();
+}
+async function doCombine(){
+  if(!(await confirmDiscard())) return;
+  if(editing && fileHandle && !isSample){ await stopEditing(); if(editing) return; }
+  alert('まとめて見たい分掌・学年のデータファイルを選んでください。\nCtrl キーを押しながらクリックすると、いくつも選べます。');
+  pickFilesTexts(list=>{
+    const files = [], bad = [];
+    list.forEach(f=>{ try{ files.push({ name:f.name, obj:normalizeState(JSON.parse(f.text)) }); }catch(e){ bad.push(f.name); } });
+    if(!files.length){ alert('読み込めるファイルがありませんでした。仕事管理のデータファイル(.json)を選んでください。'); return; }
+    const r = combineStates(files);
+    state = r.state; fileHandle = null; isSample = false; isCombined = true; editing = false; dirty = false; myLogStart = null;
+    if(view.tab==='meeting' || view.tab==='settings') view.tab = 'gantt';
+    view.showLoad = true; savePref();
+    renderAll(); scrollGanttToToday();
+    setStatus(r.used.length+'個のファイルをまとめて表示しています(見るだけです。直すときは、それぞれのファイルを開いてください)', 'saved');
+    const msg = [];
+    if(r.other.length) msg.push('年度が違うため、入れなかったファイル：\n' + r.other.map(f=>'・'+f.name+'('+f.obj.meta.fiscalYear+'年度)').join('\n') + '\n(' + state.meta.fiscalYear + '年度のファイルだけをまとめています)');
+    if(bad.length) msg.push('読み込めなかったファイル：\n' + bad.map(n=>'・'+n).join('\n'));
+    if(msg.length) alert(msg.join('\n\n'));
+  });
+}
+$('btnCombine').addEventListener('click', doCombine);
+$('bnCombine').addEventListener('click', doCombine);
 
 //////////////////////// 見本 ////////////////////////
 // 架空の名前で、1年分の見本を作る(動作確認と、はじめての人のお試し用)。今日の日付に合わせて進み具合を決める。
@@ -2390,7 +2581,7 @@ function addSampleMeetings(){
   m2.confirm.forEach(r=>{ if(r.text.includes('年間行事予定')) r.note = '各学年の行事を11月末までに集める'; });
 }
 function showSample(){
-  state = makeSample(); addSampleMeetings(); fileHandle = null; isSample = true; editing = false; dirty = false; myLogStart = null;
+  state = makeSample(); addSampleMeetings(); fileHandle = null; isSample = true; isCombined = false; editing = false; dirty = false; myLogStart = null;
   renderAll(); scrollGanttToToday();
   setStatus('見本を表示しています(「編集する」で入力も試せます。保存はされません)', 'saved');
 }
@@ -2406,6 +2597,7 @@ const GUIDE = [
   ['毎週・毎月の仕事(くり返し)', '<ul><li>小業務の入力画面の「<span class="kbd">くり返し</span>」で、「毎週(曜日)」「毎月○日」「毎月第○○曜日」「日付を自分で選ぶ」を選べます。夏休みなど、お休みの月も選べます。</li><li>ガントチャートには、1行に各回の ○ が並びます(🔁 の印)。済んだ回は灰色、過ぎてまだ済んでいない回は赤になります。</li><li>編集中に ○ を押すと「済」と「まだ」が切り替わります。入力画面の「済んだ回」でも印を付けられます。</li><li>進み具合は、済んだ回の数から自動で決まります。仕事量の表では、その月の回数分を数えます。</li></ul>'],
   ['仕事量の表と印刷','<ul><li>「<span class="kbd">仕事量の表を表示</span>」に印を付けると、ガントチャートの下に先生ごと・月ごとの仕事量が出ます。色が濃いほど多い月です。</li><li>「<span class="kbd">🖨 印刷</span>」で、用紙(A3横・A4横)、期間、担当者、プロジェクトを選んで印刷します。PDF にもできます。</li></ul>'],
   ['定例会レジュメ', '<ol><li>「<span class="kbd">定例会レジュメ</span>」タブを開き、「編集する」を押してから「<span class="kbd">＋ 新しいレジュメを作る</span>」を押します。会議の日は、設定の「定例会の曜日」から自動で決まります(あとで直せます)。</li><li>ガントチャートの仕事から、「報告(完了した仕事)」「確認(次回までの仕事)」「要相談(期限切れ)」「近づいている行事」が自動で入ります。メモ欄に書き足したり、「＋ 行を書き足す」で行を足したりできます。</li><li>「協議事項」「連絡事項」を書き、「<span class="kbd">🖨 印刷(A4縦)</span>」で印刷します。</li><li>会議のあとに「決定事項」を書いておくと、次の会のレジュメの「前回の決定事項」に写されます。</li></ol>'],
+  ['新しい年度・学校全体', '<ul><li><b>前年度から作る</b>：「新規作成」の画面(または最初の画面)の「<span class="kbd">前年度から作る</span>」で、前年度のファイルから「毎年くり返す」仕事を写して、新しい年度のファイルを作ります。日付は同じ週の同じ曜日にそろい、進み具合は「未着手」に戻ります。前年度のファイルは書き換えません。</li><li><b>まとめて見る</b>：上の「<span class="kbd">まとめて見る</span>」で、分掌・学年のファイルをいくつか選ぶと、学校全体をまとめて表示・印刷できます(見るだけ)。同じ名前の先生は同じ人として数えるので、仕事量の表で分掌をまたいだ偏りも見えます。</li></ul>'],
   ['編集の記録とバックアップ','<ul><li>上の「<span class="kbd">編集の記録</span>」で、<b>だれが・いつ編集したか</b>を新しい順に見られます(何を変えたかは残りません)。</li><li>「設定」タブの「<span class="kbd">データを書き出す(バックアップ)</span>」で、日付入りの控えを作れます。学期の終わりなどに控えておいてください。</li><li>困ったときは README(使い方の説明書)の「困ったとき」を見てください。</li></ul>'],
 ];
 let guidePage = 0;
