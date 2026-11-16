@@ -412,12 +412,6 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
         <div class="row"><span class="k">定例会の曜日</span><select id="setMeetingDay"></select></div>
       </section>
       <section>
-        <h2>編集パスワード</h2>
-        <p class="hint">設定すると、「編集する」を押したときにパスワードを聞かれます。空のまま「設定」を押すと、パスワードなしになります。</p>
-        <div class="row"><span class="k">今の状態</span><span id="pwState"></span></div>
-        <div class="row"><span class="k">新しいパスワード</span><input type="password" id="newPw" style="width:200px"><button id="btnSetPw">設定</button></div>
-      </section>
-      <section>
         <h2>バックアップと復元</h2>
         <p class="hint">データファイルの控えを、日付の入った名前でダウンロードします。ファイルが壊れたり消えたりしたときは、「データを読み込む(復元)」で元に戻せます。</p>
         <div class="row">
@@ -500,7 +494,6 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
   <div class="modal" style="width:440px">
     <h2>編集を始めます</h2>
     <div class="row"><span class="k">お名前</span><span class="v"><input type="text" id="eName" list="memberNames"><div class="hint">ほかの先生に「○○先生が編集中」と表示されます。</div></span></div>
-    <div class="row" id="ePwRow"><span class="k">パスワード</span><span class="v"><input type="password" id="ePw"></span></div>
     <div class="err" id="eErr"></div>
     <div class="foot"><span class="spacer"></span><button id="eCancel">やめる</button><button class="primary" id="eOk">編集を始める</button></div>
   </div>
@@ -771,7 +764,6 @@ function emptyState(scopeType, scopeName, fy){
       members: [],
       workloadLevels: CONFIG.defaultWorkloadLevels.map(x=>({...x})),
       meetingWeekday: 3,
-      editPasswordHash: '',
       savedAt: null, savedBy: '',
     },
     projects: [],
@@ -789,6 +781,8 @@ function normalizeState(o){
   o.formatVersion = o.formatVersion || FORMAT_VERSION;
   o.app = 'work-planner';
   o.meta = Object.assign(base.meta, o.meta);
+  // 編集にパスワードは付けない(共通ルール)。以前の版のパスワードは無視し、次に保存するときに消す
+  delete o.meta.editPasswordHash; delete o.meta.passwordHash;
   if(!CONFIG.scopeTypes.includes(o.meta.scopeType)) o.meta.scopeType = '分掌';
   o.meta.fiscalYear = Number(o.meta.fiscalYear) || currentFiscalYear();
   o.meta.members = (Array.isArray(o.meta.members)?o.meta.members:[]).filter(m=>m && m.id).map(m=>({ id:String(m.id), name:String(m.name||'') }));
@@ -2013,8 +2007,6 @@ function renderSettings(){
   $('levelList').innerHTML = state.meta.workloadLevels.map((l,i)=>'<div class="row"><span class="k">'+l.value+'</span><input type="text" data-level="'+i+'" value="'+esc(l.label)+'" style="width:160px"'+(ro?' disabled':'')+'></div>').join('');
   $('setMeetingDay').innerHTML = CONFIG.weekdays.map((w,i)=>'<option value="'+i+'"'+(i===state.meta.meetingWeekday?' selected':'')+'>'+w+'曜日</option>').join('');
   $('setMeetingDay').disabled = ro;
-  $('pwState').textContent = state.meta.editPasswordHash ? 'パスワードあり' : 'パスワードなし';
-  $('newPw').disabled = ro; $('btnSetPw').disabled = ro;
   $('btnImport').disabled = ro || isSample;
   $('btnExport').disabled = isSample || isCombined;
 }
@@ -2062,24 +2054,6 @@ $('levelList').addEventListener('change', e=>{
   markDirty();
 });
 $('setMeetingDay').addEventListener('change', e=>{ if(!editing) return; state.meta.meetingWeekday = Number(e.target.value); markDirty(); });
-async function sha256Hex(text){
-  if(!(window.crypto && crypto.subtle)) throw new Error('このブラウザではパスワードを使えません。Chrome か Edge で開いてください。');
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-$('btnSetPw').addEventListener('click', async ()=>{
-  if(!editing) return;
-  const pw = $('newPw').value;
-  if(!pw){
-    if(!confirm('パスワードをなくします。だれでも「編集する」を押せるようになります。よろしいですか？')) return;
-    state.meta.editPasswordHash = '';
-  } else {
-    try{ state.meta.editPasswordHash = await sha256Hex(pw); }catch(e){ alert(e.message); return; }
-    alert('パスワードを設定しました。忘れないように控えておいてください。');
-  }
-  $('newPw').value = '';
-  markDirty(); renderSettings();
-});
 
 //////////////////////// バックアップと復元 ////////////////////////
 function stateToText(o){ return JSON.stringify(o, null, 2); }
@@ -2252,11 +2226,9 @@ $('logClose').addEventListener('click', ()=>closeOverlay('logOverlay'));
 function openEditDialog(){
   if(isCombined){ alert("まとめて見ているときは編集できません。直すときは、「ファイル ▼」→「開く」で、その分掌・学年のファイルを開いてください。"); return; }
   $('eName').value = editorName();
-  $('ePw').value = '';
-  $('ePwRow').hidden = !state.meta.editPasswordHash;
   $('eErr').textContent = '';
   $('editOverlay').classList.add('show');
-  setTimeout(()=> ($('eName').value ? (state.meta.editPasswordHash ? $('ePw') : $('eOk')) : $('eName')).focus(), 30);
+  setTimeout(()=> ($('eName').value ? $('eOk') : $('eName')).focus(), 30);
 }
 async function startEditing(){
   const name = $('eName').value.trim();
@@ -2268,10 +2240,6 @@ async function startEditing(){
       const { obj, modified } = await readHandle(fileHandle);
       state = obj; lastKnownModified = modified;
     }catch(e){ $('eErr').textContent = 'データファイルを読み直せませんでした。共有サーバーにつながっているか確かめてください。('+e.message+')'; return; }
-  }
-  if(state.meta.editPasswordHash){
-    let h; try{ h = await sha256Hex($('ePw').value); }catch(e){ $('eErr').textContent = e.message; return; }
-    if(h !== state.meta.editPasswordHash){ $('eErr').textContent = 'パスワードが違います。'; renderAll(); return; }
   }
   if(isLockFresh(state.editLock) && state.editLock.session !== SESSION_ID && state.editLock.by !== name){
     if(!confirm('⚠ いま '+sensei(state.editLock.by)+'が編集中です。\n\n同時に編集すると、どちらかの入力が消えてしまいます。\nふつうは、相手が「編集を終える」まで待ってください。\n\nそれでも編集を始めますか？(相手がブラウザを閉じ忘れている場合など)')){ closeOverlay('editOverlay'); renderAll(); return; }
@@ -2303,7 +2271,7 @@ async function stopEditing(){
 $('btnEdit').addEventListener('click', ()=>{ if(!state) return; editing ? stopEditing() : openEditDialog(); });
 $('eOk').addEventListener('click', startEditing);
 $('eCancel').addEventListener('click', ()=>closeOverlay('editOverlay'));
-['eName','ePw'].forEach(id=> $(id).addEventListener('keydown', e=>{ if(e.key==='Enter') startEditing(); }));
+['eName'].forEach(id=> $(id).addEventListener('keydown', e=>{ if(e.key==='Enter') startEditing(); }));
 $('btnSave').addEventListener('click', doSave);
 $('btnOpen').addEventListener('click', doOpen);
 $('bnOpen').addEventListener('click', doOpen);
@@ -2383,7 +2351,6 @@ function makeNextYear(src){
     members: src.meta.members.map(m=>({...m})),
     workloadLevels: src.meta.workloadLevels.map(l=>({...l})),
     meetingWeekday: src.meta.meetingWeekday,
-    editPasswordHash: src.meta.editPasswordHash,
   });
   // 年度の初め・終わりの日は、新しい年度の初め・終わりにする(1年中くり返す仕事が、新しい年度でも1年中になるように)
   const fyS = fy+'-04-01', fyE = (fy+1)+'-03-31';
