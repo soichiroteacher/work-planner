@@ -143,6 +143,16 @@ table.list tr.proj-row td{ background:#f4f4f4; font-weight:bold; }
 table.list tr.done-row td{ color:#888; }
 table.list td.memo{ max-width:260px; font-size:14px; color:#444; white-space:pre-wrap; }
 table.list td.nowrap{ white-space:nowrap; }
+/* 仕事の一覧で横にスクロールしても、小業務の名前は左に残す(何の仕事の行か分からなくならないように) */
+table.list:not(.m-tbl) .rowhead{ position:sticky; left:0; z-index:1; background:#fff; box-shadow:1px 0 0 var(--line-strong); max-width:260px; }
+table.list:not(.m-tbl) th.rowhead{ z-index:3; background:#eef2f6; }
+table.list tr.task-row:hover td.rowhead{ background:#f0f5fb; }
+table.list tr.done-row td.rowhead{ background:#fff; }
+/* プロジェクトの行は横いっぱいの1マスなので、中身だけを左に残す */
+table.list tr.proj-row .ph{ position:sticky; left:8px; display:inline-block; }
+/* ===== 上の横スクロールバー(表の上にも付けて、下と連動させる。共通ルール) ===== */
+.top-scroll{ overflow-x:auto; overflow-y:hidden; height:16px; }
+.top-scroll > div{ height:1px; }
 .caution{ color:var(--warn); font-weight:bold; }
 .proj-row .pbtns{ display:inline-flex; gap:6px; margin-left:14px; font-weight:normal; vertical-align:middle; }
 .proj-row .pbtns button{ font-size:13px; padding:2px 10px; }
@@ -202,7 +212,12 @@ table.r-tbl tr{ break-inside:avoid; }
 #loadPanel{ margin-top:14px; }
 #loadPanel h2{ font-size:16px; margin:0 0 4px; }
 #loadPanel .hint{ margin:0 0 6px; }
-.load-wrap{ overflow:auto; }
+.load-wrap{ overflow:auto; max-height:45vh; }
+/* 仕事量の表も、縦にスクロールしたら月の見出し、横にスクロールしたら担当の名前が残るようにする */
+table.load thead th{ position:sticky; top:0; z-index:2; }
+table.load .nm, table.load thead th:first-child{ position:sticky; left:0; z-index:1; background:#fff; }
+table.load thead th:first-child{ z-index:3; background:#eef2f6; }
+table.load tr.sum td.nm{ background:#f7f7f7; }
 table.load{ border-collapse:collapse; font-size:14px; }
 table.load th, table.load td{ border:1px solid var(--line); padding:4px 6px; text-align:center; min-width:48px; }
 table.load th{ background:#eef2f6; font-weight:bold; }
@@ -218,6 +233,7 @@ table.load tr.sum td{ border-top:2px solid var(--line-strong); font-weight:bold;
 @media print{
   body.printing > *:not(#printArea){ display:none !important; }
   body.printing #printArea{ display:block; }
+  .top-scroll{ display:none !important; }
   *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }  /* 横棒の塗りや色の濃さを印刷する */
 }
 .p-root{ color:#000; font-size:var(--p-font); }
@@ -372,7 +388,7 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
       <button id="lAddTask" class="edit-only">＋ 小業務</button>
       <span class="hint">見出しを押すと並べ替え</span>
     </div>
-    <div class="tbl-wrap"><table class="list" id="listTable"></table></div>
+    <div class="tbl-wrap" id="listWrap"><table class="list" id="listTable"></table></div>
   </section>
 
   <!-- ===== 定例会レジュメ ===== -->
@@ -1414,16 +1430,16 @@ function compareTasks(a, b){
 function renderList(){
   const cols = view.lGroup ? LIST_COLS.filter(c=>c.key!=='project') : LIST_COLS;
   const match = t => (!view.lFilter || t.assignees.includes(view.lFilter)) && !(view.lHideDone && statusOf(t)==='完了');
-  let html = '<thead><tr>' + cols.map(c=>'<th data-sort="'+c.key+'">'+c.label+(c.key===view.sortKey ? ' <span class="arrow">'+(view.sortDir>0?'▲':'▼')+'</span>' : '')+'</th>').join('') + '</tr></thead><tbody>';
+  let html = '<thead><tr>' + cols.map(c=>'<th data-sort="'+c.key+'"'+(c.key==='name'?' class="rowhead"':'')+'>'+c.label+(c.key===view.sortKey ? ' <span class="arrow">'+(view.sortDir>0?'▲':'▼')+'</span>' : '')+'</th>').join('') + '</tr></thead><tbody>';
   const taskRow = t => {
     const od = isOverdue(t);
     const cells = cols.map(c=>{
       switch(c.key){
         case 'project': { const p = state.projects.find(p=>p.id===t.projectId); return '<td>'+esc(p?p.name:'')+'</td>'; }
         case 'name': {
-          if(!t.repeat) return '<td>'+esc(t.name)+'</td>';
+          if(!t.repeat) return '<td class="rowhead">'+esc(t.name)+'</td>';
           const nx = nextOccurrence(t);
-          return '<td>🔁 '+esc(t.name)+'<div class="hint">'+esc(repeatText(t.repeat))+(nx ? '　次は '+fmtMDW(nx) : '')+'</div></td>';
+          return '<td class="rowhead">🔁 '+esc(t.name)+'<div class="hint">'+esc(repeatText(t.repeat))+(nx ? '　次は '+fmtMDW(nx) : '')+'</div></td>';
         }
         case 'assignees': return '<td>'+esc(namesOf(t.assignees))+'</td>';
         case 'start': return '<td class="nowrap">'+fmtMDW(t.start)+'</td>';
@@ -1453,13 +1469,13 @@ function renderList(){
       } else if(shown.length===0) return;
       const sp = p ? projectSpan(p.id) : null;
       const doneN = tasks.filter(t=>statusOf(t)==='完了').length;
-      html += '<tr class="proj-row"><td colspan="'+cols.length+'">'
+      html += '<tr class="proj-row"><td colspan="'+cols.length+'"><span class="ph">'
         + esc(p ? (p.name||'(名前なし)') : '(プロジェクトに入っていない小業務)')
         + (p && p.caution ? ' <span class="caution">⚠</span>' : '')
         + (p ? '　<span class="hint">'+(p.owners.length?'主担当：'+esc(namesOf(p.owners))+'　':'')+(sp?fmtMD(numToYmd(sp.a))+'〜'+fmtMD(numToYmd(sp.b))+'　':'')+(eventText(p)?'<b style="color:#222">◆ '+esc(eventText(p))+'</b>　':'')+'完了 '+doneN+'/'+tasks.length+'</span>'
           + (outsideTasks(p).length ? ' <span class="out-mark" title="'+esc(outsideTasks(p).join('、'))+'">期間外 '+outsideTasks(p).length+'</span>' : '') : '')
         + (p ? '<span class="pbtns"><button data-editproj="'+esc(p.id)+'">'+(editing?'直す':'内容を見る')+'</button>'+(editing?'<button data-addtask="'+esc(p.id)+'">＋ 小業務</button>':'')+'</span>' : '')
-        + '</td></tr>';
+        + '</span></td></tr>';
       shown.forEach(t=>{ html += taskRow(t); count++; });
     });
   } else {
@@ -2642,6 +2658,32 @@ document.addEventListener('keydown', e=>{
   if(e.key==='Escape') document.querySelectorAll('.overlay.show').forEach(o=>o.classList.remove('show'));
   if((e.ctrlKey||e.metaKey) && e.key==='s'){ e.preventDefault(); doSave(); }
 });
+
+//////////////////////// 上の横スクロールバー ////////////////////////
+// 横に長い表は、一番下まで縦にスクロールしないと横に動かせないので、表の上にも横スクロールバーを付ける(共通ルール)。
+// 中身が表と同じ幅の空の枠を表の上に置き、scrollLeft を互いに合わせる。横にはみ出していないときは隠す。
+function addTopScroll(wrap){
+  const bar = document.createElement('div'); bar.className = 'top-scroll';
+  const inner = document.createElement('div'); bar.appendChild(inner);
+  wrap.parentNode.insertBefore(bar, wrap);
+  let lock = false;   // 片方を動かしたときに、もう片方の scroll イベントで戻し合わないように
+  const follow = (from, to) => { if(lock){ lock = false; return; } if(to.scrollLeft !== from.scrollLeft){ lock = true; to.scrollLeft = from.scrollLeft; } };
+  bar.addEventListener('scroll', ()=> follow(bar, wrap));
+  wrap.addEventListener('scroll', ()=> follow(wrap, bar));
+  const fit = () => {
+    inner.style.width = wrap.scrollWidth + 'px';
+    bar.style.width = wrap.clientWidth + 'px';   // 縦のスクロールバーの分を除いた幅にして、動かせる範囲を表とそろえる
+    bar.style.display = wrap.scrollWidth > wrap.clientWidth + 1 ? '' : 'none';
+    bar.scrollLeft = wrap.scrollLeft;
+  };
+  // 表の幅は、表示の切り替え・画面の幅・書き直し(中身の入れ替え)で変わるので、そのたびに合わせ直す
+  const ro = new ResizeObserver(fit); ro.observe(wrap);
+  const watchChildren = () => [...wrap.children].forEach(c=>ro.observe(c));
+  watchChildren();
+  new MutationObserver(()=>{ watchChildren(); fit(); }).observe(wrap, { childList:true });
+  fit();
+}
+['gwrap','listWrap','loadTable'].forEach(id=> addTopScroll($(id)));
 
 //////////////////////// 起動 ////////////////////////
 async function boot(){
