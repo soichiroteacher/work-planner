@@ -335,8 +335,8 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
 
 <main>
   <div id="startBanner" class="banner" hidden>
-    <p><b>データのフォルダを選んでください。</b>仕事管理のデータは、校務共有サーバーの<b>分掌・学年ごとのフォルダ</b>(例：仕事管理\教務部)に置きます。</p>
-    <p class="hint">一度選ぶと、次からは開くだけで、そのフォルダの一番新しい年度のファイル(例：仕事管理_2026年度.json)が出ます(パソコン・ブラウザごとに一度選んでください)。<br>どんなアプリか試すだけなら「見本を表示する」を押してください(見本は保存されません)。</p>
+    <p><b>このフォルダには、まだ仕事管理のデータがありません。</b>仕事管理は、校務共有サーバーの<b>分掌・学年ごとのフォルダ</b>(例：仕事管理\教務部)に、このアプリ(index.html)とデータ(仕事管理_2026年度.js)を一緒に置いて使います。</p>
+    <p class="hint">入力を担当する先生は「データのフォルダを選ぶ」を押し、<b>このアプリが入っているフォルダ</b>を選んでください(パソコン・ブラウザごとに一度)。見るだけの先生は、データができていれば開くだけで表示されます。<br>どんなアプリか試すだけなら「見本を表示する」を押してください(見本は保存されません)。</p>
     <div class="btns">
       <button class="primary" id="bnFolder">データのフォルダを選ぶ</button>
       <button id="bnCombine">まとめて見る(学校全体)</button>
@@ -607,7 +607,7 @@ tr.p-proj td{ background:#efefef; font-weight:bold; }
     <div class="row"><span class="k">名前</span><span class="v"><input type="text" id="nName" placeholder="例：教務部、1学年"></span></div>
     <div class="row"><span class="k">年度</span><span class="v"><input type="number" id="nYear" style="width:100px"> 年度</span></div>
     <div class="hint" style="margin-bottom:8px">前の年度のファイルがあるときは、<button id="nFromPrev">前年度から作る</button> を使うと、毎年くり返す仕事を写して作れます。</div>
-    <div class="hint">「作る」を押すと、今のデータのフォルダの中に「仕事管理_(年度)年度.json」を作ります。1つのフォルダには1つの分掌・学年だけを置きます(別の分掌・学年は、別のフォルダを作って「データのフォルダを選ぶ」で選んでから作ってください)。</div>
+    <div class="hint">「作る」を押すと、データのフォルダ(このアプリと同じフォルダ)に「仕事管理_(年度)年度.js」を作ります。1つのフォルダには1つの分掌・学年だけを置きます(別の分掌・学年は、別のフォルダにアプリごと置いてください)。</div>
     <div class="err" id="nErr"></div>
     <div class="foot"><span class="spacer"></span><button id="nCancel">やめる</button><button class="primary" id="nOk">作る</button></div>
   </div>
@@ -647,6 +647,7 @@ let isSample = false;      // 見本を表示中か(見本は保存しない)
 let isCombined = false;    // 「まとめて見る」で、何個かのファイルをまとめて表示中か(見るだけ。保存も編集もしない)
 let lastKnownModified = 0; // 最後に読み書きしたときのファイルの更新時刻(ほかの人の保存に気づくため)
 let dirHandle = null;      // データのフォルダ(分掌・学年ごと)。IndexedDB に覚えておく
+let scriptBody = null;    // 見るだけの先生が <script src> で開いた本体 { name, fy }(フォルダの許可がないので保存はできない)
 let viewOnly = null;       // 手で開いたファイル(バックアップ・古い年度など)を見るだけで表示中なら { name, obj }。編集はできない
 let noticeInfo = null;     // 案内の種類 { kind:'newYear'|'rename'|'empty', ... }。renderNotice() で表示する
 let lastLockStamp = 0;     // 最後に「編集中」の印を保存した時刻
@@ -906,12 +907,12 @@ function renderTop(){
   $('scopeTitle').textContent = has ? (state.meta.scopeName || '(名前なし)') + '　' + state.meta.fiscalYear + '年度' + (isSample ? '　【見本・保存されません】' : '') + (isCombined ? '　【まとめて表示・見るだけ】' : '') + (viewOnly ? '　【見るだけ】' : '') : '';
   $('editBadge').hidden = !editing;      // 「編集中」の札は編集中だけ出す(閲覧中は何も出さない)
   $('btnEdit').textContent = editing ? '編集を終える' : '✏ 編集する';
-  $('btnEdit').disabled = !has || isCombined || !!viewOnly || (!fileHandle && !isSample);   // まとめて見ているとき・手で開いたファイル・保存先がないときは編集できない
+  $('btnEdit').disabled = !has || isCombined || !!viewOnly || (!fileHandle && !scriptBody && !isSample);   // まとめて見ているとき・手で開いたファイル・保存先がないときは編集できない
   $('btnLog').disabled = !has;
-  $('btnReload').hidden = !fileHandle || editing || !!viewOnly;
+  $('btnReload').hidden = !(fileHandle || scriptBody) || editing || !!viewOnly;
   $('btnSave').hidden = !editing;        // 「保存」は編集中だけ出す(ふだんは自動で保存される)
   $('btnSave').disabled = isSample;
-  $('fileName').textContent = (dirHandle ? 'フォルダ：' + dirHandle.name : '') + (fileHandle ? '\nファイル：' + fileHandle.name : '');
+  $('fileName').textContent = (dirHandle ? 'フォルダ：' + dirHandle.name : '') + (fileHandle ? '\nファイル：' + fileHandle.name : scriptBody ? '\nファイル：' + scriptBody.name + '(見るだけ)' : '');
   document.querySelectorAll('.edit-only').forEach(el=> el.hidden = !editing);
   const w = $('lockWarning');
   if(has && !editing && isLockFresh(state.editLock)){
@@ -2089,28 +2090,29 @@ $('setMeetingDay').addEventListener('change', e=>{ if(!editing) return; state.me
 //////////////////////// バックアップと復元 ////////////////////////
 function stateToText(o){ return JSON.stringify(o, null, 2); }
 function downloadText(text, name){
-  const url = URL.createObjectURL(new Blob([text], {type:'application/json'}));
+  const url = URL.createObjectURL(new Blob([text], {type:'text/plain'}));
   const a = document.createElement('a'); a.href = url; a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
 }
 $('btnExport').addEventListener('click', ()=>{
   if(!state || isSample) return;
-  downloadText(stateToText(state), '仕事管理_バックアップ_'+(state.meta.scopeName||'')+'_'+todayYmd()+'.json');
+  const name = backupName(state.meta.fiscalYear);
+  downloadText(toDataText(state, name), name);
 });
 // 「データを読み込む(復元)」: 選んだファイルを、まず見るだけで開く(中身を確かめてから「この内容に戻す」で書き込む。共通ルール)
 $('btnImport').addEventListener('click', ()=>{
   if(isSample || !fileHandle || editing) return;
   pickFileText((text, name)=>{
     let o;
-    try{ o = normalizeState(JSON.parse(text)); }catch(e){ alert('読み込めませんでした。\n'+e.message+'\n\n仕事管理のデータファイルかバックアップ(.json)を選んでください。'); return; }
+    try{ o = normalizeState(parseDataText(text)); }catch(e){ alert('読み込めませんでした。\n'+e.message+'\n\n仕事管理のデータファイルかバックアップ(.js。以前の .json も可)を選んでください。'); return; }
     showViewOnly(o, name);
   });
 });
 // Chrome/Edge 以外でも読み込みだけはできるように、input type=file で読む
 function pickFileText(cb){
   const inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.type = 'file'; inp.accept = '.js,.json';
   inp.onchange = async ()=>{ const f = inp.files[0]; if(f) cb(await f.text(), f.name); };
   inp.click();
 }
@@ -2118,19 +2120,62 @@ function pickFileText(cb){
 //////////////////////// ファイルの読み書き ////////////////////////
 // 決まり(2026-11-21 共通ルール「データファイルの置き方と自動バックアップ」):
 // ・データは分掌・学年ごとのフォルダに置く。フォルダを一度選んでもらい、IndexedDB に覚える(パソコン・ブラウザごとに一度)。
-// ・本体の名前は「仕事管理_YYYY年度.json」。起動したら、名前の年度が一番新しい本体を開く(更新日時は使わない)。
-// ・バックアップは、フォルダの中の「バックアップ」フォルダに「仕事管理_YYYY年度_バックアップ_YYYY-MM-DD_HHMM.json」で残す。
+// ・本体の名前は「仕事管理_YYYY年度.js」。起動したら、名前の年度が一番新しい本体を開く(更新日時は使わない)。
+// ・バックアップは、フォルダの中の「バックアップ」フォルダに「仕事管理_YYYY年度_バックアップ_YYYY-MM-DD_HHMM.js」で残す。
+// ・データのフォルダ = このアプリ(index.html)のフォルダ。見るだけの先生はフォルダを選ばず、<script src> で本体を読む(loadByScript)。
+//   編集する先生だけ、一度フォルダを選んでもらう(書き込むにはブラウザの許可が要るため)。
+// ・.js の中身は JSON の前に2行を付けた形(toDataText)。アプリの中で読むときは、プログラムとして動かさず文字として JSON.parse する(parseDataText)。
 function idb(){ return new Promise((res,rej)=>{ const r = indexedDB.open('work-planner', 1); r.onupgradeneeded = ()=>r.result.createObjectStore('kv'); r.onsuccess = ()=>res(r.result); r.onerror = ()=>rej(r.error); }); }
 async function idbSet(k,v){ const db = await idb(); return new Promise((res,rej)=>{ const tx = db.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete = res; tx.onerror = ()=>rej(tx.error); }); }
 async function idbGet(k){ const db = await idb(); return new Promise((res,rej)=>{ const r = db.transaction('kv').objectStore('kv').get(k); r.onsuccess = ()=>res(r.result); r.onerror = ()=>rej(r.error); }); }
 
+// ===== ファイル名を作るところ(ここ1か所にまとめてある) =====
+// ファイル名の決まりを変えるとき(例:分掌名を入れて「仕事管理_教務部_2026年度.js」にする)は、ここだけを直せばよい。
+// ほかの場所は bodyName / BODY_RE / backupName だけを使い、名前の文字を直接書かない。
 const APP_FILE = '仕事管理';          // ファイル名の頭(README のアプリ一覧の名前)
 const BACKUP_DIR = 'バックアップ';
-const bodyName = fy => APP_FILE + '_' + fy + '年度.json';
-const BODY_RE = /^仕事管理_(\d{4})年度\.json$/;
+const reEsc = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const fileHead = () => APP_FILE;      // 分掌名を入れるなら、ここで APP_FILE + '_' + 分掌名 を返す
+const bodyName = fy => fileHead() + '_' + fy + '年度.js';
+const BODY_RE = new RegExp('^' + reEsc(fileHead()) + '_(\\d{4})年度\\.js$');
 function nowStamp(){ const d = new Date(); return todayYmd() + '_' + pad2(d.getHours()) + pad2(d.getMinutes()); }
-const backupName = fy => APP_FILE + '_' + fy + '年度_バックアップ_' + nowStamp() + '.json';
+const backupName = fy => fileHead() + '_' + fy + '年度_バックアップ_' + nowStamp() + '.js';
 const isBackupName = n => /_バックアップ_/.test(n);
+// .js の中身を作る(全アプリ共通の形)。キーはファイル名(拡張子なし)
+function toDataText(o, fileName){
+  const key = String(fileName).replace(/\.(js|json)$/i, '');
+  return 'window.KOMU_DATA = window.KOMU_DATA || {};\n' + 'window.KOMU_DATA[' + JSON.stringify(key) + '] =\n' + stateToText(o) + ';\n';
+}
+// 文字として読む。.js なら「window.KOMU_DATA[...] =」の後ろから最後の } まで、以前の .json ならそのまま。キーの名前には頼らない
+function parseDataText(text){
+  text = String(text).replace(/^\uFEFF/, '');
+  if(/^\s*window\.KOMU_DATA/.test(text)){
+    const m = text.match(/window\.KOMU_DATA\s*\[[^\]]*\]\s*=/);
+    if(!m) throw new Error('データの形が違います。');
+    const a = m.index + m[0].length, b = text.lastIndexOf('}');
+    return JSON.parse(text.slice(a, b+1));
+  }
+  return JSON.parse(text);
+}
+// 見るだけの先生向け: フォルダを選ばずに <script src> で本体を読む。来年度・今年度・前年度の順に試し、読めた一番新しい年度を返す
+function loadScriptOnce(src){
+  return new Promise(res=>{
+    const el = document.createElement('script');
+    el.src = src; el.onload = ()=>{ el.remove(); res(true); }; el.onerror = ()=>{ el.remove(); res(false); };
+    document.head.appendChild(el);
+  });
+}
+async function loadByScript(){
+  const cur = currentFiscalYear();
+  for(const fy of [cur+1, cur, cur-1]){
+    window.KOMU_DATA = {};   // 読む前にからにしておき、読んだあとに入っているものを使う(キーの名前に頼らない)
+    if(!(await loadScriptOnce(encodeURIComponent(bodyName(fy)) + '?t=' + Date.now()))) continue;   // ?t= でブラウザに残った古い中身を使わない
+    const vals = Object.values(window.KOMU_DATA || {});
+    if(!vals.length) continue;
+    try{ return { fy, name:bodyName(fy), obj:normalizeState(JSON.parse(JSON.stringify(vals[0]))) }; }catch(e){}
+  }
+  return null;
+}
 
 const lockStaleMs = () => CONFIG.lockStaleMinutes*60*1000;
 function isLockFresh(lock){
@@ -2140,24 +2185,24 @@ function isLockFresh(lock){
 }
 async function readHandle(handle){
   const f = await handle.getFile();
-  return { obj: normalizeState(JSON.parse(await f.text())), modified: f.lastModified };
+  return { obj: normalizeState(parseDataText(await f.text())), modified: f.lastModified };
 }
 // 本体を開く(編集できる状態で表示する)
 async function openHandle(handle){
   const { obj, modified } = await readHandle(handle);
-  state = obj; fileHandle = handle; viewOnly = null; isSample = false; isCombined = false; editing = false; dirty = false;
+  state = obj; fileHandle = handle; scriptBody = null; viewOnly = null; isSample = false; isCombined = false; editing = false; dirty = false;
   lastKnownModified = modified;
   setStatus('');
   renderAll(); scrollGanttToToday();
 }
-// フォルダの中のファイルを調べる。本体(名前の年度つき)と、それ以外の .json(バックアップの名前のものは除く)
+// フォルダの中のファイルを調べる。本体(名前の年度つき)と、それ以外の .json・.dat(以前の形。バックアップの名前のものは除く)
 async function scanFolder(dir){
   const bodies = [], others = [];
   for await (const [name, h] of dir.entries()){
     if(h.kind !== 'file') continue;
     const m = name.match(BODY_RE);
     if(m) bodies.push({ fy:Number(m[1]), h });
-    else if(/\.json$/i.test(name) && !isBackupName(name)) others.push(h);
+    else if(/\.(json|dat)$/i.test(name) && !isBackupName(name)) others.push(h);
   }
   bodies.sort((a,b)=>b.fy-a.fy);
   return { bodies, others };
@@ -2174,18 +2219,18 @@ async function openDataFolder(){
     return;
   }
   if(others.length){
-    // 決まった名前の本体がない → いちばん新しい .json を見るだけで開き、決まった名前で保存し直すよう案内する(今のデータからの移し替え)
+    // 決まった名前の本体がない → いちばん新しい .json・.dat を見るだけで開き、決まった名前で保存し直すよう案内する(今のデータからの移し替え)
     let best = null, bestT = -1;
     for(const h of others){ try{ const f = await h.getFile(); if(f.lastModified > bestT){ bestT = f.lastModified; best = h; } }catch(e){} }
     try{
       const { obj } = await readHandle(best);
-      state = obj; fileHandle = null; viewOnly = null; isSample = false; isCombined = false; editing = false; dirty = false;
+      state = obj; fileHandle = null; scriptBody = null; viewOnly = null; isSample = false; isCombined = false; editing = false; dirty = false;
       noticeInfo = { kind:'rename', from:best.name, obj };
       renderAll(); scrollGanttToToday();
       return;
     }catch(e){ /* 仕事管理のファイルでなければ、空のフォルダとして扱う */ }
   }
-  state = null; fileHandle = null; viewOnly = null; isSample = false; isCombined = false; editing = false; dirty = false;
+  state = null; fileHandle = null; scriptBody = null; viewOnly = null; isSample = false; isCombined = false; editing = false; dirty = false;
   noticeInfo = { kind:'empty' };
   renderAll();
 }
@@ -2197,6 +2242,9 @@ async function chooseFolder(){
   let d;
   try{ d = await window.showDirectoryPicker({ id:'wp-data', mode:'readwrite', ...(dirHandle?{startIn:dirHandle}:{}) }); }
   catch(e){ if(e.name!=='AbortError') alert('フォルダを選べませんでした。\n'+e.message); return; }
+  // データのフォルダ = アプリのフォルダ。index.html がないフォルダは違う(見るだけの先生が開けなくなるため)
+  try{ await d.getFileHandle('index.html'); }
+  catch(e){ alert('このフォルダには、仕事管理のアプリ(index.html)がありません。\nいま開いている仕事管理のアプリ(index.html)と同じフォルダを選んでください。'); return; }
   dirHandle = d;
   try{ await idbSet('dataDir', d); }catch(e){}
   try{ await openDataFolder(); }
@@ -2208,10 +2256,10 @@ async function doOpen(){
   if(editing && fileHandle && !isSample){ await stopEditing(); if(editing) return; }
   if(!supportsFSA){ alert('このブラウザでは、データファイルを開くことができません。Chrome か Edge で開いてください。'); return; }
   try{
-    const [h] = await window.showOpenFilePicker({ id:'wp-data', types:[{ description:'仕事管理のデータ', accept:{'application/json':['.json']} }], ...(dirHandle?{startIn:dirHandle}:{}) });
+    const [h] = await window.showOpenFilePicker({ id:'wp-data', types:[{ description:'仕事管理のデータ', accept:{'text/plain':['.js','.json']} }], ...(dirHandle?{startIn:dirHandle}:{}) });
     const { obj } = await readHandle(h);
     showViewOnly(obj, h.name);
-  }catch(e){ if(e.name!=='AbortError') alert('開けませんでした。\n'+e.message+'\n\n仕事管理のデータファイル(.json)を選んでいるか確かめてください。'); }
+  }catch(e){ if(e.name!=='AbortError') alert('開けませんでした。\n'+e.message+'\n\n仕事管理のデータファイル(.js。以前の .json も可)を選んでいるか確かめてください。'); }
 }
 function showViewOnly(obj, name){
   state = obj; viewOnly = { name, obj:JSON.parse(JSON.stringify(obj)) };
@@ -2219,12 +2267,30 @@ function showViewOnly(obj, name){
   renderAll(); scrollGanttToToday();
   setStatus('');
 }
-// いつもの本体に戻る(見本・まとめて見る・見るだけのあと)
+// いつものファイルを開く。フォルダの許可があればフォルダから(編集できる)、なければ <script src> で(見るだけの先生)
+async function openUsual(){
+  if(dirHandle){ try{ if(await ensurePermission(dirHandle, false)){ await openDataFolder(); return true; } }catch(e){} }
+  const r = await loadByScript();
+  if(!r) return false;
+  state = r.obj; scriptBody = { name:r.name, fy:r.fy }; fileHandle = null; viewOnly = null; isSample = false; isCombined = false; editing = false; dirty = false; myLogStart = null;
+  noticeInfo = r.fy < currentFiscalYear() ? { kind:'newYear', fy:currentFiscalYear() } : null;
+  renderAll(); scrollGanttToToday();
+  return true;
+}
+// いつものファイルに戻る(見本・まとめて見る・見るだけのあと)
 async function backToBody(){
   if(!(await confirmDiscard())) return;
-  if(!dirHandle){ state = null; fileHandle = null; viewOnly = null; isSample = false; isCombined = false; editing = false; dirty = false; renderAll(); return; }
-  try{ if(!(await ensurePermission(dirHandle, true))) return; await openDataFolder(); }
-  catch(e){ alert('データのフォルダを開けませんでした。\n'+e.message); }
+  if(!(await openUsual())){ state = null; fileHandle = null; scriptBody = null; viewOnly = null; isSample = false; isCombined = false; editing = false; dirty = false; renderAll(); }
+}
+// 編集する先生: フォルダの許可を取る(ボタンを押したときにしか許可の画面は出せない)。フォルダをまだ選んでいなければ選んでもらう
+async function acquireFolder(){
+  if(dirHandle){
+    try{ if(!(await ensurePermission(dirHandle, true))) return false; await openDataFolder(); return !!fileHandle; }
+    catch(e){ alert('データのフォルダを開けませんでした。\n'+e.message+'\n\nフォルダが移動したときは「ファイル ▼」→「データのフォルダを選ぶ」で選び直してください。'); return false; }
+  }
+  alert('編集するには、はじめに一度だけ、データのフォルダを選びます。\n次の画面で、この仕事管理のアプリ(index.html)が入っているフォルダを選んでください。');
+  await chooseFolder();
+  return !!fileHandle;
 }
 async function ensurePermission(h, ask){
   const o = { mode:'readwrite' };
@@ -2244,9 +2310,11 @@ async function takeBackup(handle, daily){
     const head = APP_FILE + '_' + fy + '年度_バックアップ_' + todayYmd() + '_';
     for await (const [name] of bd.entries()) if(name.startsWith(head)) return false;
   }
-  const text = await (await handle.getFile()).text();
+  const raw = await (await handle.getFile()).text();
   let name = backupName(fy);
-  try{ await bd.getFileHandle(name); name = name.replace(/\.json$/, '_2.json'); }catch(e){}   // 同じ分にもう1つ取るとき
+  try{ await bd.getFileHandle(name); name = name.replace(/\.js$/, '_2.js'); }catch(e){}   // 同じ分にもう1つ取るとき
+  let text = raw;
+  try{ text = toDataText(parseDataText(raw), name); }catch(e){}   // キーをバックアップの名前にする(読めないときは中身をそのまま残す)
   const w = await (await bd.getFileHandle(name, { create:true })).createWritable();
   await w.write(text); await w.close();
   return true;
@@ -2269,7 +2337,7 @@ function renderNotice(){
       + '<div class="btns">' + (fileHandle ? '<button class="primary" data-nt="restore">この内容に戻す</button>' : '') + '<button data-nt="back">いつものファイルに戻る</button></div>';
   } else if((isSample || isCombined) && dirHandle){
     h = '<div class="btns"><span>' + (isSample ? '見本を表示しています。' : 'まとめて表示しています。') + '</span><button data-nt="back">いつものファイルに戻る</button></div>';
-  } else if(noticeInfo && noticeInfo.kind==='newYear' && state && !isSample && !isCombined){
+  } else if(noticeInfo && noticeInfo.kind==='newYear' && state && !isSample && !isCombined && !viewOnly){
     h = '<p><b>' + noticeInfo.fy + '年度のファイルがまだありません。</b>いま表示しているのは ' + state.meta.fiscalYear + '年度のファイルです。新しい年度になったら、下のボタンで作ってください(「毎年くり返す」仕事を写します)。</p>'
       + '<div class="btns"><button class="primary" data-nt="newYear">' + noticeInfo.fy + '年度のファイルを作る</button></div>';
   } else if(noticeInfo && noticeInfo.kind==='rename' && state){
@@ -2286,7 +2354,7 @@ $('notice').addEventListener('click', async e=>{
   const k = b.dataset.nt;
   if(k==='back') backToBody();
   else if(k==='restore') restoreFromView();
-  else if(k==='newYear'){ if(await confirmDiscard()) openNextYearDialog(); }
+  else if(k==='newYear'){ if(!(await confirmDiscard())) return; if(!fileHandle && !(await acquireFolder())) return; openNextYearDialog(); }
   else if(k==='rename') renameToBody();
   else if(k==='new') openNewDialog();
   else if(k==='nextYear') openNextYearDialog();
@@ -2310,7 +2378,7 @@ async function restoreFromView(){
   o.editLog = cur.editLog.concat([{ by:editorName() || '(名前なし)', start:new Date().toISOString(), end:new Date().toISOString() }]).slice(-EDIT_LOG_MAX);   // 戻したことも記録に残す
   o.meta.savedAt = new Date().toISOString(); o.meta.savedBy = editorName();
   try{
-    const w = await fileHandle.createWritable(); await w.write(stateToText(o)); await w.close();
+    const w = await fileHandle.createWritable(); await w.write(toDataText(o, fileHandle.name)); await w.close();
     await openHandle(fileHandle);
     alert('戻しました。');
   }catch(e){ alert('書き込めませんでした。\n'+e.message+'\n\n共有サーバーにつながっているか確かめてください。'); }
@@ -2324,7 +2392,7 @@ async function renameToBody(){
   try{
     const h = await dirHandle.getFileHandle(name, { create:true });
     const from = noticeInfo.from;   // openDataFolder() で案内が消えるので、先に控えておく
-    const w = await h.createWritable(); await w.write(stateToText(noticeInfo.obj)); await w.close();
+    const w = await h.createWritable(); await w.write(toDataText(noticeInfo.obj, name)); await w.close();
     await openDataFolder();
     alert('保存しました。元の「'+from+'」は、いらなければエクスプローラーで消してかまいません。');
   }catch(e){ alert('保存できませんでした。\n'+e.message+'\n\nフォルダに書き込む権限があるか確かめてください。'); }
@@ -2335,7 +2403,7 @@ async function writeFile(opts){
   const f = await fileHandle.getFile();
   if(lastKnownModified && f.lastModified !== lastKnownModified && !(opts && opts.force)){
     let other = null;
-    try{ other = JSON.parse(await f.text()); }catch(e){}
+    try{ other = parseDataText(await f.text()); }catch(e){}
     const by = other && other.meta && other.meta.savedBy;
     if(!confirm('このファイルは、あなたが開いたあとに'+(by ? sensei(by)+'が' : 'ほかの場所で')+'保存しています。\nこのまま保存すると、そちらの変更は消えてしまいます。\n\n保存しますか？(「キャンセル」を押すと保存しません。その場合は、入力した内容を紙などに控えてから、ページを開き直して入力し直してください)')){
       clearTimeout(autosaveTimer);
@@ -2347,7 +2415,7 @@ async function writeFile(opts){
   state.meta.savedBy = editorName();
   touchLog(state.meta.savedAt);
   const w = await fileHandle.createWritable();
-  await w.write(stateToText(state));
+  await w.write(toDataText(state, fileHandle.name));
   await w.close();
   lastKnownModified = (await fileHandle.getFile()).lastModified;
   dirty = false;
@@ -2419,7 +2487,11 @@ $('logClose').addEventListener('click', ()=>closeOverlay('logOverlay'));
 //////////////////////// 編集する / 編集を終える ////////////////////////
 function openEditDialog(){
   if(viewOnly){ alert('見るだけで開いているファイルは編集できません。この内容を使うときは、上の「この内容に戻す」を押してください。'); return; }
-  if(!fileHandle && !isSample){ alert('保存先のファイルがありません。上の案内に従ってください。'); return; }
+  if(!fileHandle && !isSample){
+    if(!scriptBody){ alert('保存先のファイルがありません。上の案内に従ってください。'); return; }
+    acquireFolder().then(ok=>{ if(ok) openEditDialog(); });   // 見るだけで開いていた先生: フォルダの許可を取ってから
+    return;
+  }
   if(isCombined){ alert("まとめて見ているときは編集できません。直すときは、「ファイル ▼」→「開く」で、その分掌・学年のファイルを開いてください。"); return; }
   $('eName').value = editorName();
   $('eErr').textContent = '';
@@ -2478,8 +2550,8 @@ $('btnFolder').addEventListener('click', chooseFolder);
 $('btnFolder2').addEventListener('click', chooseFolder);
 $('bnFolder').addEventListener('click', chooseFolder);
 $('btnReload').addEventListener('click', async ()=>{
-  if(!fileHandle || editing) return;
-  try{ await openHandle(fileHandle); setStatus('最新の内容を読み込みました', 'saved'); }
+  if(!(fileHandle || scriptBody) || editing) return;
+  try{ if(fileHandle) await openHandle(fileHandle); else await openUsual(); setStatus('最新の内容を読み込みました', 'saved'); }
   catch(e){ alert('読み直せませんでした。\n'+e.message); }
 });
 // 編集中は、入力がなくても定期的に「編集中」の印を保存し直す(ほかの先生に編集中だと伝わり続けるように)
@@ -2516,7 +2588,7 @@ $('nOk').addEventListener('click', async ()=>{
   renderAll();
   alert('作りました。はじめに「設定」の「メンバー」に、担当者の名前を入れてください。');
 });
-// 新しいデータを、データのフォルダの中に「仕事管理_YYYY年度.json」として作り、編集を始める(新規作成と、前年度から作るで共通)。
+// 新しいデータを、データのフォルダの中に「仕事管理_YYYY年度.js」として作り、編集を始める(新規作成と、前年度から作るで共通)。
 // 作れなかったときは何も変えずに false を返す。backupFrom: 作る前にバックアップを取る本体(前年度から作るとき)
 async function startNewFile(newState, backupFrom){
   if(!dirHandle){ alert('先に「ファイル ▼」→「データのフォルダを選ぶ」で、この分掌・学年のデータを置くフォルダを選んでください。'); return false; }
@@ -2527,7 +2599,7 @@ async function startNewFile(newState, backupFrom){
     if(backupFrom){ try{ await takeBackup(backupFrom, false); }catch(e){ if(!confirm('前の年度のファイルのバックアップを残せませんでした。('+e.message+')\nこのまま作りますか？')) return false; } }
     if(editing && fileHandle && !isSample){ await stopEditing(); if(editing) return false; }
     const h = await dirHandle.getFileHandle(name, { create:true });
-    state = newState; fileHandle = h; viewOnly = null; isSample = false; isCombined = false; editing = true; dirty = false;
+    state = newState; fileHandle = h; scriptBody = null; viewOnly = null; isSample = false; isCombined = false; editing = true; dirty = false;
     noticeInfo = null; lastKnownModified = 0;
     state.editLock = newLock(editorName());
     beginLog(editorName());
@@ -2605,8 +2677,8 @@ function showNySource(){
 $('nyUseOpen').addEventListener('click', ()=>{ if(state && !isCombined) useNySource(state, isSample, fileHandle ? fileHandle.name : (isSample ? '見本' : '今開いているデータ')); });
 $('nyPick').addEventListener('click', ()=>{
   pickFileText((text, name)=>{
-    try{ useNySource(normalizeState(JSON.parse(text)), false, name); $('nyErr').textContent = ''; }
-    catch(e){ $('nyErr').textContent = '「'+name+'」を読み込めませんでした。仕事管理のデータファイル(.json)を選んでください。('+e.message+')'; }
+    try{ useNySource(normalizeState(parseDataText(text)), false, name); $('nyErr').textContent = ''; }
+    catch(e){ $('nyErr').textContent = '「'+name+'」を読み込めませんでした。仕事管理のデータファイル(.js。以前の .json も可)を選んでください。('+e.message+')'; }
   });
 });
 $('nyCancel').addEventListener('click', ()=>closeOverlay('nyOverlay'));
@@ -2645,7 +2717,7 @@ function combineStates(files){
   const byName = new Map();   // 名前 → まとめたあとのメンバーの id
   let order = 0;
   used.forEach((f, fi)=>{
-    const s = f.obj, label = s.meta.scopeName || f.name.replace(/\.json$/,'');
+    const s = f.obj, label = s.meta.scopeName || f.name.replace(/\.(js|json)$/,'');
     const mid = new Map();
     s.meta.members.forEach(m=>{
       const nm = m.name.trim();
@@ -2680,7 +2752,7 @@ async function doCombine(){
     await readNewest(top, top.name);
     for await (const [name, h] of top.entries()) if(h.kind==='directory' && name!==BACKUP_DIR) await readNewest(h, name);
   }catch(e){ alert('フォルダの中を読めませんでした。\n'+e.message); return; }
-  if(!files.length){ alert('仕事管理のファイル(仕事管理_2026年度.json のような名前)が見つかりませんでした。分掌・学年のフォルダが入っているフォルダを選んでください。'); return; }
+  if(!files.length){ alert('仕事管理のファイル(仕事管理_2026年度.js のような名前)が見つかりませんでした。分掌・学年のフォルダが入っているフォルダを選んでください。'); return; }
   files.sort((a,b)=>b.obj.meta.fiscalYear-a.obj.meta.fiscalYear);   // 一番新しい年度にそろえる
   const r = combineStates(files);
   state = r.state; fileHandle = null; viewOnly = null; isSample = false; isCombined = true; editing = false; dirty = false; myLogStart = null;
@@ -2798,7 +2870,7 @@ function addSampleMeetings(){
   m2.confirm.forEach(r=>{ if(r.text.includes('年間行事予定')) r.note = '各学年の行事を11月末までに集める'; });
 }
 function showSample(){
-  state = makeSample(); addSampleMeetings(); fileHandle = null; viewOnly = null; isSample = true; isCombined = false; editing = false; dirty = false; myLogStart = null;
+  state = makeSample(); addSampleMeetings(); fileHandle = null; scriptBody = null; viewOnly = null; isSample = true; isCombined = false; editing = false; dirty = false; myLogStart = null;
   renderAll(); scrollGanttToToday();
   setStatus('「編集する」で入力も試せます', 'saved');
 }
@@ -2808,7 +2880,7 @@ $('bnSample').addEventListener('click', showSample);
 // ★ 画面のボタンの名前や場所を変えたら、ここの説明も同時に直すこと(共通ルール)
 const GUIDE = [
   ['このアプリでできること', '<ul><li>分掌・学年の仕事を「プロジェクト」(例：入学式)と「小業務」(例：式次第の作成)に分けて入力します。</li><li>ガントチャートで、いつ・だれが・どこまで進んだかを見ます。</li><li>仕事量の表で、先生ごと・月ごとの仕事の偏りを見ます。</li><li>A3(掲示用)・A4(配布用)で印刷できます。</li></ul><p>まずは下の「<b>見本で試す</b>」を押すと、架空の教務部のデータで操作を試せます(見本は保存されません)。</p>'],
-  ['データのフォルダを選ぶ', '<ol><li>はじめて使うときは「<span class="kbd">データのフォルダを選ぶ</span>」を押し、校務共有サーバーの<b>分掌・学年のフォルダ</b>(例：仕事管理\\教務部)を選びます。パソコン・ブラウザごとに一度だけです。</li><li>次からは、開くだけで、そのフォルダの<b>一番新しい年度のファイル</b>(仕事管理_2026年度.json)が出ます。「許可」のボタンが出たときは押してください。</li><li>フォルダにまだファイルがないときは、案内の「<span class="kbd">新規作成</span>」で作ります。</li><li>新しい年度になると「2027年度のファイルを作る」の案内が出ます。押したときだけ作ります。</li></ol>'],
+  ['データの置き場所', '<ol><li>アプリ(index.html)とデータ(仕事管理_2026年度.js)は、校務共有サーバーの<b>分掌・学年のフォルダ</b>(例：仕事管理\\教務部)に一緒に置きます。<b>見るだけの先生は、開くだけ</b>で一番新しい年度が出ます。</li><li><b>入力する先生</b>は、はじめて「編集する」を押したときに、<b>このアプリが入っているフォルダ</b>を選びます(パソコン・ブラウザごとに一度だけ)。次からは「許可」のボタンを押すだけです。</li><li>データのファイル(.js)は、ダブルクリックせず、このアプリから開いてください。</li><li>フォルダにまだファイルがないときは、案内の「<span class="kbd">新規作成</span>」で作ります。</li><li>新しい年度になると「2027年度のファイルを作る」の案内が出ます。押したときだけ作ります。</li></ol>'],
   ['入力するとき(名前の入力)', '<ol><li>上の「<span class="kbd">✏ 編集する</span>」を押します。</li><li><b>お名前を入れて</b>「編集を始める」を押します。名前が空のままでは始められません。入れた名前は次から最初から入っています。</li><li>編集中は、ほかの先生の画面に「○○先生が編集中」と出ます。<b>編集できるのは1人ずつ</b>です。</li><li>入力した内容は自動で保存されます。終わったら必ず「<span class="kbd">編集を終える</span>」を押してください。</li></ol>'],
   ['ガントチャートと仕事の一覧', '<ul><li>「<span class="kbd">＋ プロジェクト</span>」「<span class="kbd">＋ 小業務</span>」で入力します(編集中だけ出ます)。</li><li>名前や横棒を押すと、内容・注意点を見たり直したりできます。</li><li>プロジェクトには、<b>期間</b>と<b>当日</b>(行事の本番・締め切りの日)も入れられます(入れなくてもかまいません)。当日は ◆(2日以上なら黒い帯)で出ます。小業務が期間からはみ出すと「期間外」と出ます。</li><li>「担当者」で先生をしぼる、「完了を隠す」で終わった仕事を隠す、「月ごと・週ごと・日ごと」で目盛りを変えられます。</li><li>「仕事の一覧」タブでは、列の見出しを押すと並べ替えます。</li></ul>'],
   ['毎週・毎月の仕事(くり返し)', '<ul><li>小業務の入力画面の「<span class="kbd">くり返し</span>」で、「毎週(曜日)」「毎月○日」「毎月第○○曜日」「日付を自分で選ぶ」を選べます。夏休みなど、お休みの月も選べます。</li><li>ガントチャートには、1行に各回の ○ が並びます(🔁 の印)。済んだ回は灰色、過ぎてまだ済んでいない回は赤になります。</li><li>編集中に ○ を押すと「済」と「まだ」が切り替わります。入力画面の「済んだ回」でも印を付けられます。</li><li>進み具合は、済んだ回の数から自動で決まります。仕事量の表では、その月の回数分を数えます。</li></ul>'],
@@ -2887,34 +2959,34 @@ function addTopScroll(wrap){
 //////////////////////// 起動 ////////////////////////
 async function boot(){
   renderAll();
+  let d; try{ d = await idbGet('dataDir'); }catch(e){}
+  if(d) dirHandle = d;
+  // フォルダの許可が残っていればフォルダから(編集できる)、なければ <script src> で(見るだけ。フォルダを選ばなくてよい)
+  let ok = false;
+  try{ ok = await openUsual(); }catch(e){}
+  if(ok){
+    if(!fileHandle && !supportsFSA) setStatus('このブラウザでは見るだけです(入力は Chrome か Edge で)', 'dirty');
+    return;
+  }
   if(!supportsFSA){
     $('bnLast').hidden = false;
     $('bnLast').innerHTML = '<b style="color:var(--warn)">このブラウザでは、データファイルへの保存ができません。Chrome か Edge で開いてください。</b>';
     return;
   }
-  let d; try{ d = await idbGet('dataDir'); }catch(e){}
   if(!d){
     // 前の版(ファイルを1つずつ選ぶ作り)を使っていた人への案内
     let old; try{ old = await idbGet('lastFile'); }catch(e){}
-    if(old){ $('bnLast').hidden = false; $('bnLast').innerHTML = '<b>データの開き方が変わりました。</b>「データのフォルダを選ぶ」を押して、これまでのファイル「'+esc(old.name)+'」が入っているフォルダを選んでください。'; }
+    if(old){ $('bnLast').hidden = false; $('bnLast').innerHTML = '<b>データの開き方が変わりました。</b>「データのフォルダを選ぶ」を押して、このアプリ(index.html)が入っているフォルダを選んでください。これまでのファイル「'+esc(old.name)+'」は、そのフォルダに移しておいてください。'; }
     return;
   }
-  dirHandle = d;
-  // ブラウザの決まりで、起動のたびに1回だけ許可のボタンが要ることがある
-  const open = async ()=>{
-    try{ await openDataFolder(); }
-    catch(e){
-      $('bnLast').hidden = false;
-      $('bnLast').innerHTML = '<b style="color:var(--warn)">データのフォルダ「'+esc(d.name)+'」を開けませんでした。</b>共有サーバーにつながっているか確かめてください。フォルダが移動したときは「データのフォルダを選ぶ」で選び直してください。<div class="hint">('+esc(e.message)+')</div>';
-    }
-  };
-  try{ if(await d.queryPermission({mode:'readwrite'}) === 'granted'){ await open(); return; } }catch(e){}
+  // フォルダは覚えているが、許可が切れている(ブラウザの決まりで、ボタンを押してもらう)
   $('bnLast').hidden = false;
   $('bnLast').innerHTML = 'データのフォルダ「'+esc(d.name)+'」を開くには、ここを押してください → <button class="primary" id="bnLastBtn">いつものファイルを開く</button>';
   $('bnLastBtn').addEventListener('click', async ()=>{
     try{ if(await d.requestPermission({mode:'readwrite'}) !== 'granted') return; }catch(e){ alert('開けませんでした。\n'+e.message); return; }
     $('bnLast').hidden = true;
-    await open();
+    try{ await openDataFolder(); }
+    catch(e){ $('bnLast').hidden = false; $('bnLast').innerHTML = '<b style="color:var(--warn)">データのフォルダ「'+esc(d.name)+'」を開けませんでした。</b>共有サーバーにつながっているか確かめてください。フォルダが移動したときは「データのフォルダを選ぶ」で選び直してください。'; }
   });
 }
 boot();
